@@ -3,14 +3,14 @@ __precompile__()
 module MessyTimeSeriesOptim
 
 	# Libraries
-	using Distributed, Dates, Logging, LoopVectorization;
-	using LinearAlgebra, Distributions, StableRNGs, Statistics;
-	using TSAnalysis;
+	using Dates, Distributed, Logging, LoopVectorization;
+	using Distributions, LinearAlgebra, StableRNGs, Statistics;
+	using MessyTimeSeries;
 
-	# Aliases for TSAnalysis
-	find_observed_data = TSAnalysis.find_observed_data;
-	update_smoothing_factors! = TSAnalysis.update_smoothing_factors!;
-	backwards_pass = TSAnalysis.backwards_pass;
+	# Aliases for MessyTimeSeries
+	find_observed_data = MessyTimeSeries.find_observed_data;
+	update_smoothing_factors! = MessyTimeSeries.update_smoothing_factors!;
+	backwards_pass = MessyTimeSeries.backwards_pass;
 
 	# Custom dependencies
 	const local_path = dirname(@__FILE__);
