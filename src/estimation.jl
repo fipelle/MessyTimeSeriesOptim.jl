@@ -426,7 +426,7 @@ Kalman smoother and CM-step for initial conditions (i.e., X0 and P0)
     call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}, e::Union{FloatVector, Nothing}, inv_F::Union{SymMatrix, Nothing}, L::Union{FloatMatrix, Nothing})
     call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing})
 
-APIs to call `TSAnalysis.update_smoothing_factors!` with SmootherArrays.
+APIs to call `MessyTimeSeries.update_smoothing_factors!` with SmootherArrays.
 """
 call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}, e::Union{FloatVector, Nothing}, inv_F::Union{SymMatrix, Nothing}, L::Union{FloatMatrix, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2, e, inv_F, L);
 call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2);
@@ -435,7 +435,7 @@ call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus
     call_backwards_pass(Xp::FloatVector, Pp::SymMatrix, smoother_arrays::SmootherArrays)
     call_backwards_pass(Pp::SymMatrix, smoother_arrays::SmootherArrays)
 
-APIs to call `TSAnalysis.backwards_pass` with SmootherArrays.
+APIs to call `MessyTimeSeries.backwards_pass` with SmootherArrays.
 """
 call_backwards_pass(Xp::FloatVector, Pp::SymMatrix, smoother_arrays::SmootherArrays) = backwards_pass(Xp, Pp, smoother_arrays.J1);
 call_backwards_pass(Pp::SymMatrix, smoother_arrays::SmootherArrays) = backwards_pass(Pp, smoother_arrays.J2);

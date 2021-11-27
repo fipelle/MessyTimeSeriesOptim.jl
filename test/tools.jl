@@ -1,4 +1,4 @@
-using LinearAlgebra, Random, StableRNGs, Statistics, Test, TSAnalysis;
+using LinearAlgebra, Random, StableRNGs, Statistics, Test, MessyTimeSeries;
 include("../src/MessyTimeSeriesOptim.jl");
 using Main.MessyTimeSeriesOptim;
 
