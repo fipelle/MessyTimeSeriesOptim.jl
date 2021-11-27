@@ -1,2 +1,2 @@
 # MessyTimeSeriesOptim.jl
-Optimisation libraries based on EM-like algorithms for time series, compatible with incomplete data
+Optimisation libraries to estimate and validate time series models, compatible with incomplete data
