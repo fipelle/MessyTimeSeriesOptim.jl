@@ -1,2 +1,9 @@
 # MessyTimeSeriesOptim.jl
-Optimisation libraries to estimate and validate time series models, compatible with incomplete data
+```MessyTimeSeriesOptim``` includes estimation and validation algorithms for time series models, compatible with incomplete data.
+
+```julia
+import Pkg;
+Pkg.add("MessyTimeSeriesOptim")
+```
+
+##### The documentation will soon be included in this readme file!
