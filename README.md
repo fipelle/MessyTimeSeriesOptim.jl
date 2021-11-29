@@ -3,7 +3,7 @@
 
 ```julia
 import Pkg;
-Pkg.add("MessyTimeSeriesOptim")
+Pkg.add("MessyTimeSeriesOptim");
 ```
 
 ##### The documentation will soon be included in this readme file!
