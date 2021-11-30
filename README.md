@@ -6,4 +6,4 @@ import Pkg;
 Pkg.add("MessyTimeSeriesOptim");
 ```
 
-##### The documentation will soon be included in this readme file! The estimation and validation of common multivariate models is addressed in MessyTimeSeriesOptim.jl.
+##### The documentation will soon be included in this readme file!
