@@ -13,13 +13,13 @@ module MessyTimeSeriesOptim
 	backwards_pass = MessyTimeSeries.backwards_pass;
 
 	# Custom dependencies
-	const local_path = dirname(@__FILE__);
-	include("$local_path/types.jl");
-	include("$local_path/models/dfm.jl");
-	include("$local_path/models/var.jl");
-	include("$local_path/models/vma.jl");
-	include("$local_path/estimation.jl");
-	include("$local_path/validation.jl");
+	local_path = dirname(@__FILE__);
+	include("$(local_path)/types.jl");
+	include("$(local_path)/models/dfm.jl");
+	include("$(local_path)/models/var.jl");
+	include("$(local_path)/models/vma.jl");
+	include("$(local_path)/estimation.jl");
+	include("$(local_path)/validation.jl");
 
 	# Export
 	export EstimSettings, DFMSettings, VARSettings, VMASettings, ValidationSettings, HyperGrid;
