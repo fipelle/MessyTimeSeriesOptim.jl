@@ -1,0 +1,7 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+MessyTimeSeriesOptim = "7115d47b-e118-4204-bc33-dbd7ed133e66"
+
+[compat]
+Documenter = "0.27"
+MessyTimeSeriesOptim = "0.1"

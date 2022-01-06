@@ -434,7 +434,7 @@ Initialise the ECM algorithm for DFM models.
 - `estim`: settings used for the estimation
 
 # References
-Pellegrino (2021)
+Pellegrino (2022)
 """
 function initialise(estim::DFMSettings, trends_skeleton::Nothing)
 
