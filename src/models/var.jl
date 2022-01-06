@@ -19,7 +19,7 @@ Define an immutable structure used to initialise the estimation routine for VAR(
 - `λ`: overall shrinkage hyper-parameter for the elastic-net penalty
 - `α`: weight associated to the LASSO component of the elastic-net penalty
 - `β`: additional shrinkage for distant lags (p>1)
-- `Γ`: Diagonal matrix used to input the hyperparameters in the estimation - see Pellegrino (2021) for details
+- `Γ`: Diagonal matrix used to input the hyperparameters in the estimation - see Pellegrino (2022) for details
 - `ε`: Small number (default: 1e-4)
 - `tol`: tolerance used to check convergence (default: 1e-4)
 - `max_iter`: maximum number of iterations for the estimation algorithm (default: 1000)
@@ -88,7 +88,7 @@ Initialise the ECM algorithm for VAR(q) models.
 - `estim`: settings used for the estimation
 
 # References
-Pellegrino (2021)
+Pellegrino (2022)
 """
 function initialise(estim::VARSettings)
     

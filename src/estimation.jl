@@ -749,14 +749,14 @@ update_sspace_data!(sspace::KalmanSettings, output_sspace_data::Nothing) = nothi
 """
     ecm(estim::EstimSettings)
 
-Run the ECM algorithm in Pellegrino (2021).
+Run the ECM algorithm in Pellegrino (2022).
 
 # Arguments
 - `estim`: settings used for the estimation
 - `output_sspace_data`: Optional argument. If specified, it is used as the output state space data. Otherwise, estim.Y is used instead.
 
 # References
-Pellegrino (2021)
+Pellegrino (2022)
 """
 function ecm(estim::EstimSettings; output_sspace_data::Union{FloatMatrix, JMatrix{Float64}, Nothing}=nothing)
 

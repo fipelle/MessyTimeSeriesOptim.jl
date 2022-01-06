@@ -58,7 +58,7 @@ Compute the in-sample / out-of-sample error associated with the candidate hyperp
 - `jth_jackknife_data`: j-th jackknife sample (default: nothing)
 
 # References
-Pellegrino (2021)
+Pellegrino (2022)
 """
 function fc_err(validation_settings::ValidationSettings, p::Int64, λ::Number, α::Number, β::Number; jackknife_data::Union{JArray{Float64}, Nothing}=nothing, jackknife_sample_id::Union{Int64, Nothing}=nothing);
 
@@ -148,7 +148,7 @@ Return the jackknife out-of-sample error.
 - `β`: (candidate) additional shrinkage for distant lags (p>1)
 
 # References
-Pellegrino (2021)
+Pellegrino (2022)
 """
 function jackknife_err(validation_settings::ValidationSettings, jackknife_data::JArray{Float64, 3}, p::Int64, λ::Number, α::Number, β::Number)
 
@@ -188,7 +188,7 @@ Select the tuning hyper-parameters for the elastic-net vector autoregression.
 - `γ_grid`: HyperGrid struct
 
 # References
-Pellegrino (2021)
+Pellegrino (2022)
 """
 function select_hyperparameters(validation_settings::ValidationSettings, γ_grid::HyperGrid, seed::Int64=1)
 
