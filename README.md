@@ -1,5 +1,5 @@
 # MessyTimeSeriesOptim.jl
-```MessyTimeSeriesOptim``` is a Julia package for estimating and validating time series models compatible with incomplete data.
+A Julia implementation of estimation and validation algorithms for time series compatible with incomplete data.
 
 | **Documentation**                                                              |
 |:-------------------------------------------------------------------------------:
