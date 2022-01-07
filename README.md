@@ -1,5 +1,5 @@
 # MessyTimeSeriesOptim.jl
-```MessyTimeSeriesOptim``` includes estimation and validation algorithms for time series models, compatible with incomplete data.
+```MessyTimeSeriesOptim``` includes estimation and validation algorithms for time series models compatible with incomplete data.
 
 | **Documentation**                                                              |
 |:-------------------------------------------------------------------------------:
