@@ -1,4 +1,5 @@
-# MessyTimeSeriesOptim.jl
+<img src="./docs/src/assets/logo.svg" style="width:600px">
+
 A Julia implementation of estimation and validation algorithms for time series compatible with incomplete data.
 
 | **Documentation**                                                              |
