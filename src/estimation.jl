@@ -576,11 +576,11 @@ end
 end
 
 """
-    cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1})
+    cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1})
 
 Compute numerator and denominator to compute the (i,j)-th CM update for the measurement equation coefficients in `cm_step!`.
 """
-function cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1})
+function cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1})
 
     # Coordinates
     i,j = ij.I;
