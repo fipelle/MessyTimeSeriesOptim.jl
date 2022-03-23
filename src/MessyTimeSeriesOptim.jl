@@ -4,7 +4,7 @@ module MessyTimeSeriesOptim
 
 	# Libraries
 	using Dates, Distributed, Logging, LoopVectorization;
-	using Distributions, LinearAlgebra, SparseArray, StableRNGs, Statistics;
+	using Distributions, LinearAlgebra, SparseArrays, StableRNGs, Statistics;
 	using MessyTimeSeries;
 
 	# Aliases for MessyTimeSeries
