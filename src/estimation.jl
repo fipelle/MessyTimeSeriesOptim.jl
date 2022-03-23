@@ -300,7 +300,7 @@ function update_ecm_stats_measurement!(barrier_M::FloatMatrix, estim::EstimSetti
     Ps_view = @view Ps[coordinates_measurement_states, coordinates_measurement_states];
 
     # Necessary statistics
-    A_transpose = zeros(estim.n, length(ind_not_missings));
+    A_transpose = spzeros(estim.n, length(ind_not_missings));
     for (i, j) in enumerate(ind_not_missings)
         A_transpose[j, i] = 1.0;
     end
@@ -309,13 +309,14 @@ function update_ecm_stats_measurement!(barrier_M::FloatMatrix, estim::EstimSetti
     mul!(smoother_arrays.buffer_M, A_transpose, Y_obs);
     mul!(smoother_arrays.M, smoother_arrays.buffer_M, Xs_view', 1.0, 1.0);
 
-    # Update ECM statistics: compute N_t and O_t matrices
-    mul!(smoother_arrays.buffer_N.data, A_transpose, A_transpose');
+    # Update ECM statistics: compute and store N_t
+    smoother_arrays.N[t] = A_transpose*A_transpose';
+    
+    # Update ECM statistics: compute O_t
     mul!(smoother_arrays.buffer_O.data, Xs_view, Xs_view');
     smoother_arrays.buffer_O.data .+= Ps_view;
 
-    # Store N[t] and O[t]
-    smoother_arrays.N[t] = [col[:] for col in eachcol(smoother_arrays.buffer_N)];
+    # Store O_t
     smoother_arrays.O[t] = [col[:] for col in eachcol(smoother_arrays.buffer_O)];
 end
 
