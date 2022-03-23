@@ -41,7 +41,6 @@ struct SmootherArrays
     N::Union{Array{VectorsArray{Float64},1}, Nothing}
     O::Union{Array{VectorsArray{Float64},1}, Nothing}
     buffer_M::Union{FloatVector, Nothing}
-    buffer_N::Union{SymMatrix, Nothing}
     buffer_O::Union{SymMatrix, Nothing}
 end
 
@@ -58,10 +57,10 @@ function SmootherArrays(estim::EstimSettings, sspace::KalmanSettings, coordinate
     F, G, H = initialise_ecm_stats_transition(coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs);
 
     # ECM statistics for the measurement equation
-    M, N, O, buffer_M, buffer_N, buffer_O = initialise_ecm_stats_measurement(estim, coordinates_measurement_states);
+    M, N, O, buffer_M, buffer_O = initialise_ecm_stats_measurement(estim, coordinates_measurement_states);
 
     # Return structure
-    return SmootherArrays(J1, J2, Xs_leading, Ps_leading, F, G, H, M, N, O, buffer_M, buffer_N, buffer_O);
+    return SmootherArrays(J1, J2, Xs_leading, Ps_leading, F, G, H, M, N, O, buffer_M, buffer_O);
 end
 
 # Validation types

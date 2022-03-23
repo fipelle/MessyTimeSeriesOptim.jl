@@ -247,9 +247,8 @@ function initialise_ecm_stats_measurement(estim::EstimSettings, coordinates_meas
     N = Array{VectorsArray{Float64},1}(undef, estim.T);
     O = Array{VectorsArray{Float64},1}(undef, estim.T);
     buffer_M = zeros(estim.n);
-    buffer_N = Symmetric(zeros(estim.n, estim.n));
     buffer_O = Symmetric(zeros(estim.m, estim.m));
-    return M, N, O, buffer_M, buffer_N, buffer_O;
+    return M, N, O, buffer_M, buffer_O;
 end
 
 initialise_ecm_stats_measurement(estim::EstimSettings, coordinates_measurement_states::Nothing) = nothing, nothing, nothing, nothing, nothing, nothing;
