@@ -402,6 +402,7 @@ reinitialise_ecm_stats!(A::FloatVector) = fill!(A, 0.0);
 reinitialise_ecm_stats!(A::FloatMatrix) = fill!(A, 0.0);
 reinitialise_ecm_stats!(A::SymMatrix) = fill!(A.data, 0.0);
 reinitialise_ecm_stats!(A::Array{VectorsArray{Float64},1}) = nothing; # the items of A are replaced in-place in the ecm iteration, when needed - thus, empty!(A) is not needed.
+reinitialise_ecm_stats!(A::Vector{SparseMatrixCSC{Float64, Int64}}) = nothing; # the items of A are replaced in-place in the ecm iteration, when needed - thus, empty!(A) is not needed.
 
 function reinitialise_ecm_stats!(smoother_arrays::SmootherArrays)
     reinitialise_ecm_stats!(smoother_arrays.J1);
