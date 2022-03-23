@@ -244,12 +244,11 @@ Initialise M, N and O to nothing.
 """
 function initialise_ecm_stats_measurement(estim::EstimSettings, coordinates_measurement_states::IntVector)
     M = zeros(estim.n, estim.m);
-    N = Array{VectorsArray{Float64},1}(undef, estim.T);
+    N = Vector{SparseMatrixCSC{Float64, Int64}}(undef, estim.T);
     O = Array{VectorsArray{Float64},1}(undef, estim.T);
     buffer_M = zeros(estim.n);
-    buffer_N = Symmetric(zeros(estim.n, estim.n));
     buffer_O = Symmetric(zeros(estim.m, estim.m));
-    return M, N, O, buffer_M, buffer_N, buffer_O;
+    return M, N, O, buffer_M, buffer_O;
 end
 
 initialise_ecm_stats_measurement(estim::EstimSettings, coordinates_measurement_states::Nothing) = nothing, nothing, nothing, nothing, nothing, nothing;
@@ -301,7 +300,7 @@ function update_ecm_stats_measurement!(barrier_M::FloatMatrix, estim::EstimSetti
     Ps_view = @view Ps[coordinates_measurement_states, coordinates_measurement_states];
 
     # Necessary statistics
-    A_transpose = zeros(estim.n, length(ind_not_missings));
+    A_transpose = spzeros(estim.n, length(ind_not_missings));
     for (i, j) in enumerate(ind_not_missings)
         A_transpose[j, i] = 1.0;
     end
@@ -310,13 +309,14 @@ function update_ecm_stats_measurement!(barrier_M::FloatMatrix, estim::EstimSetti
     mul!(smoother_arrays.buffer_M, A_transpose, Y_obs);
     mul!(smoother_arrays.M, smoother_arrays.buffer_M, Xs_view', 1.0, 1.0);
 
-    # Update ECM statistics: compute N_t and O_t matrices
-    mul!(smoother_arrays.buffer_N.data, A_transpose, A_transpose');
+    # Update ECM statistics: compute and store N_t
+    smoother_arrays.N[t] = A_transpose*A_transpose';
+
+    # Update ECM statistics: compute O_t
     mul!(smoother_arrays.buffer_O.data, Xs_view, Xs_view');
     smoother_arrays.buffer_O.data .+= Ps_view;
 
-    # Store N[t] and O[t]
-    smoother_arrays.N[t] = [col[:] for col in eachcol(smoother_arrays.buffer_N)];
+    # Store O_t
     smoother_arrays.O[t] = [col[:] for col in eachcol(smoother_arrays.buffer_O)];
 end
 
@@ -402,6 +402,7 @@ reinitialise_ecm_stats!(A::FloatVector) = fill!(A, 0.0);
 reinitialise_ecm_stats!(A::FloatMatrix) = fill!(A, 0.0);
 reinitialise_ecm_stats!(A::SymMatrix) = fill!(A.data, 0.0);
 reinitialise_ecm_stats!(A::Array{VectorsArray{Float64},1}) = nothing; # the items of A are replaced in-place in the ecm iteration, when needed - thus, empty!(A) is not needed.
+reinitialise_ecm_stats!(A::Vector{SparseMatrixCSC{Float64, Int64}}) = nothing; # the items of A are replaced in-place in the ecm iteration, when needed - thus, empty!(A) is not needed.
 
 function reinitialise_ecm_stats!(smoother_arrays::SmootherArrays)
     reinitialise_ecm_stats!(smoother_arrays.J1);
@@ -577,11 +578,11 @@ end
 end
 
 """
-    cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1})
+    cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1})
 
 Compute numerator and denominator to compute the (i,j)-th CM update for the measurement equation coefficients in `cm_step!`.
 """
-function cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1})
+function cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij::CartesianIndex{2}, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1})
 
     # Coordinates
     i,j = ij.I;
@@ -602,8 +603,10 @@ function cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij
             # Pointers
             N_t = N[t];
             O_t = O[t];
-            N_it = N_t[i];
             O_jt = O_t[j];
+
+            # Convenient view into N_t
+            N_it = @view N_t[:,i];
 
             # Shortcut
             @inbounds NO_ij_t = N_it[i]*O_jt[j];

@@ -617,11 +617,11 @@ CM-step
 =#
 
 """
-    cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::SubArray{Float64}, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::FloatMatrix, H_raw::FloatMatrix, M::FloatArray, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::CoordinatesVector)
+    cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::SubArray{Float64}, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::FloatMatrix, H_raw::FloatMatrix, M::FloatArray, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::CoordinatesVector)
 
 Run the CM-step for elastic-net DFMs.
 """
-function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::SubArray{Float64}, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::FloatMatrix, H_raw::FloatMatrix, M::FloatArray, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::CoordinatesVector)
+function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::SubArray{Float64}, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::FloatMatrix, H_raw::FloatMatrix, M::FloatArray, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::CoordinatesVector)
 
     # Make sure `F_raw` and `H_raw` are symmetric
     F = Symmetric(F_raw)::SymMatrix;

@@ -142,11 +142,11 @@ CM-step
 =#
 
 """
-    cm_step!(estim::VMASettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::Nothing, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::Nothing, H::Nothing, M::FloatArray, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::Nothing)
+    cm_step!(estim::VMASettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::Nothing, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::Nothing, H::Nothing, M::FloatArray, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::Nothing)
 
 Run the CM-step for elastic-net VMA(r) models.
 """
-function cm_step!(estim::VMASettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::Nothing, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::Nothing, H::Nothing, M::FloatArray, N::Array{VectorsArray{Float64},1}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::Nothing)
+function cm_step!(estim::VMASettings, sspace::KalmanSettings, B_star::SubArray{Float64}, C_star::Nothing, Q_view::SubArray{Float64}, F_raw::FloatMatrix, G::Nothing, H::Nothing, M::FloatArray, N::Vector{SparseMatrixCSC{Float64, Int64}}, O::Array{VectorsArray{Float64},1}, coordinates_free_params_B::CoordinatesVector, coordinates_free_params_C::Nothing)
 
     # Make sure F is symmetric
     F = Symmetric(F_raw)::SymMatrix;
