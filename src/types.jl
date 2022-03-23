@@ -38,7 +38,7 @@ struct SmootherArrays
     G::Union{FloatMatrix, Nothing}
     H::Union{FloatMatrix, Nothing}
     M::Union{FloatMatrix, Nothing}
-    N::Union{Array{VectorsArray{Float64},1}, Nothing}
+    N::Union{Vector{SparseMatrixCSC{Float64, Int64}}, Nothing}
     O::Union{Array{VectorsArray{Float64},1}, Nothing}
     buffer_M::Union{FloatVector, Nothing}
     buffer_O::Union{SymMatrix, Nothing}

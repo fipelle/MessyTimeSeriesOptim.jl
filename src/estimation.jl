@@ -244,7 +244,7 @@ Initialise M, N and O to nothing.
 """
 function initialise_ecm_stats_measurement(estim::EstimSettings, coordinates_measurement_states::IntVector)
     M = zeros(estim.n, estim.m);
-    N = Array{VectorsArray{Float64},1}(undef, estim.T);
+    N = Vector{SparseMatrixCSC{Float64, Int64}}(undef, estim.T);
     O = Array{VectorsArray{Float64},1}(undef, estim.T);
     buffer_M = zeros(estim.n);
     buffer_O = Symmetric(zeros(estim.m, estim.m));
