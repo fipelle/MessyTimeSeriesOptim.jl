@@ -311,7 +311,7 @@ function update_ecm_stats_measurement!(barrier_M::FloatMatrix, estim::EstimSetti
 
     # Update ECM statistics: compute and store N_t
     smoother_arrays.N[t] = A_transpose*A_transpose';
-    
+
     # Update ECM statistics: compute O_t
     mul!(smoother_arrays.buffer_O.data, Xs_view, Xs_view');
     smoother_arrays.buffer_O.data .+= Ps_view;
@@ -602,8 +602,10 @@ function cm_step_time_loop(sspace::KalmanSettings, B_star::SubArray{Float64}, ij
             # Pointers
             N_t = N[t];
             O_t = O[t];
-            N_it = N_t[i];
             O_jt = O_t[j];
+
+            # Convenient view into N_t
+            N_it = @view N_t[:,i];
 
             # Shortcut
             @inbounds NO_ij_t = N_it[i]*O_jt[j];
