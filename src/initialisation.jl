@@ -104,9 +104,9 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
 
     # Maximum likelihood
-    params_0  = [1e-2; 1e2; 0.90; zeros(lags-1)];
-    params_lb = [1e-4; 1.0; -10*ones(lags)];
-    params_ub = [1.0;  1e4; +10*ones(lags)];
+    params_0  = [1e-3; 1e3; 0.90; zeros(lags-1)];
+    params_lb = [1e-4; 1e2; -10*ones(lags)];
+    params_ub = [1e-2; 1e4; +10*ones(lags)];
     res = optimize(params -> initial_univariate_decomposition_fmin!(params, sspace), params_lb, params_ub, params_0, SAMIN(rt=0.90, f_tol=0.0, x_tol=1e-6), Optim.Options(iterations = 10^6));
     
     # Update sspace accordingly
