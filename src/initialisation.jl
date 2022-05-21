@@ -129,8 +129,8 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
 
     # Maximum likelihood
     params_0     = [1e-2; 1e2; 0.90; zeros(lags-1)];
-    params_lb    = [1e-4; 1e1; -2*ones(lags)];
-    params_ub    = [1e-0; 1e3; +2*ones(lags)];
+    params_lb    = [1e-3; 1e1; -2*ones(lags)];
+    params_ub    = [1e-1; 1e3; +2*ones(lags)];
     params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
     res_optim    = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-3, x_reltol=1e-3, iterations=10^6));
     
