@@ -43,8 +43,8 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
     end
 
     # Update sspace accordingly
-    MessyTimeSeriesOptim.update_sspace_Q_from_params!(constrained_params, sspace);
-    MessyTimeSeriesOptim.update_sspace_C_from_params!(constrained_params, sspace);
+    update_sspace_Q_from_params!(constrained_params, sspace);
+    update_sspace_C_from_params!(constrained_params, sspace);
 
     # Make sure that the cycle is causal
     is_cycle_causal = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
@@ -53,7 +53,7 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
     if is_cycle_causal
 
         # Update initial conditions
-        MessyTimeSeriesOptim.update_sspace_P0_from_params!(sspace);
+        update_sspace_P0_from_params!(sspace);
         
         # Run kalman filter
         status = kfilter_full_sample(sspace);
