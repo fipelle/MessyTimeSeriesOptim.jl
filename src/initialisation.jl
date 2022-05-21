@@ -29,16 +29,23 @@ function update_sspace_P0_from_params!(sspace::KalmanSettings)
 end
 
 """
-    initial_univariate_decomposition_fmin!(params::Vector{Float64}, sspace::KalmanSettings)
+    fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 
 Return -1 times the log-likelihood function (or a large number if the cycle is not causal).
 """
-function initial_univariate_decomposition_fmin!(params::Vector{Float64}, sspace::KalmanSettings)
-    
+function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
+
+    # Enhance mixing
+    scaling_factor = max(1, sum(abs.(constrained_params[3:end])));
+    for i=3:length(constrained_params)
+        constrained_params[i] /= scaling_factor; # this improves mixing since any resulting eigenvalue of the companion form of the cycle will be <= 1 in absolute value
+        constrained_params[i] *= 0.98;           # while this should ensure that the eigenvalues are <= 0.98 in absolute value, numerical errors may lead to problematic cases <- these are handled below
+    end
+
     # Update sspace accordingly
-    update_sspace_Q_from_params!(params, sspace);
-    update_sspace_C_from_params!(params, sspace);
-    
+    MessyTimeSeriesOptim.update_sspace_Q_from_params!(constrained_params, sspace);
+    MessyTimeSeriesOptim.update_sspace_C_from_params!(constrained_params, sspace);
+
     # Make sure that the cycle is causal
     is_cycle_causal = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
 
@@ -46,17 +53,34 @@ function initial_univariate_decomposition_fmin!(params::Vector{Float64}, sspace:
     if is_cycle_causal
 
         # Update initial conditions
-        update_sspace_P0_from_params!(sspace);
+        MessyTimeSeriesOptim.update_sspace_P0_from_params!(sspace);
         
         # Run kalman filter
         status = kfilter_full_sample(sspace);
 
         # Return fmin
         return -status.loglik;
-    
+
     else
         return 1/eps();
     end
+end
+
+"""
+    fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, sspace::KalmanSettings)
+
+Trasform params to have a bounded support and then run fmin!(...).
+"""
+function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, sspace::KalmanSettings)
+
+    # Unconstrained -> constrained parameters
+    constrained_params = copy(params);
+    for i in axes(constrained_params, 1)
+        constrained_params[i] = get_bounded_logit(constrained_params[i], params_lb[i], params_ub[i]);
+    end
+    
+    # Return -1 times the log-likelihood function
+    return fmin!(constrained_params, sspace);
 end
 
 """
@@ -104,14 +128,18 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
 
     # Maximum likelihood
-    params_0  = [1e-2; 1e2; 0.90; zeros(lags-1)];
-    params_lb = [1e-4; 1.0; -10*ones(lags)];
-    params_ub = [1.0;  1e4; +10*ones(lags)];
-    res = optimize(params -> initial_univariate_decomposition_fmin!(params, sspace), params_lb, params_ub, params_0, SAMIN(rt=0.90, f_tol=0.0, x_tol=1e-6, verbosity=0), Optim.Options(iterations=10^6));
+    params_0     = [1e-2; 1e2; 0.90; zeros(lags-1)];
+    params_lb    = [1e-4; 1e1; -2*ones(lags)];
+    params_ub    = [1e-0; 1e3; +2*ones(lags)];
+    params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
+    res_optim    = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-3, x_reltol=1e-3, iterations=10^6));
+    
+    # Minimiser with bounded support
+    minimizer_bounded = [get_bounded_logit(res_optim.minimizer[i], params_lb[i], params_ub[i]) for i in axes(res_optim.minimizer, 1)];
     
     # Update sspace accordingly
-    update_sspace_Q_from_params!(res.minimizer, sspace);
-    update_sspace_C_from_params!(res.minimizer, sspace);
+    update_sspace_Q_from_params!(minimizer_bounded, sspace);
+    update_sspace_C_from_params!(minimizer_bounded, sspace);
     update_sspace_P0_from_params!(sspace);
 
     # Retrieve optimal states
