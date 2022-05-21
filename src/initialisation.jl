@@ -48,10 +48,11 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 
     # Make sure that the cycle is causal
     is_cycle_causal = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
+    is_P0_non_problematic = minimum(abs.(eigvals(sspace.P0))) >= 1e-3;
 
     # Return fmin
-    if is_cycle_causal
-
+    if is_cycle_causal && is_P0_non_problematic
+        
         # Update initial conditions
         update_sspace_P0_from_params!(sspace);
         
