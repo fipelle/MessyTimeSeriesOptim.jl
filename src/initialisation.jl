@@ -14,6 +14,15 @@ end
 Update `sspace.C` from `params`.
 """
 function update_sspace_C_from_params!(params::Vector{Float64}, sspace::KalmanSettings)
+    
+    # Update `params` to enhance mixing
+    scaling_factor = max(1, sum(abs.(params[3:end])));
+    for i=3:length(params)
+        params[i] /= scaling_factor; # this improves mixing since any resulting eigenvalue of the companion form of the cycle will be <= 1 in absolute value
+        params[i] *= 0.98;           # while this should ensure that the eigenvalues are <= 0.98 in absolute value, numerical errors may lead to problematic cases <- these are handled below
+    end
+
+    # Update `sspace.C`
     sspace.C[3, 3:end] = params[3:end];
 end
 
@@ -35,37 +44,53 @@ Return -1 times the log-likelihood function (or a large number if the cycle is n
 """
 function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 
-    # Enhance mixing
-    scaling_factor = max(1, sum(abs.(constrained_params[3:end])));
-    for i=3:length(constrained_params)
-        constrained_params[i] /= scaling_factor; # this improves mixing since any resulting eigenvalue of the companion form of the cycle will be <= 1 in absolute value
-        constrained_params[i] *= 0.98;           # while this should ensure that the eigenvalues are <= 0.98 in absolute value, numerical errors may lead to problematic cases <- these are handled below
-    end
-
     # Update sspace accordingly
     update_sspace_Q_from_params!(constrained_params, sspace);
     update_sspace_C_from_params!(constrained_params, sspace);
 
-    # Make sure that the cycle is causal
-    is_cycle_causal = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
+    # Determine whether the cycle is problematic
+    if sum(isinf.(sspace.C)) == 0
+        is_cycle_non_problematic = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
+    else
+        is_cycle_non_problematic = false;
+    end
+
+    # Determine whether Q is problematic
+    if sum(isinf.(sspace.Q)) == 0
+        is_Q_non_problematic = true;
+    else
+        is_Q_non_problematic = false;
+    end    
+
+    # Determine whether P0 is problematic
     if (sum(isnan.(sspace.P0)) == 0) && (sum(isinf.(sspace.P0)) == 0)
         is_P0_non_problematic = minimum(abs.(eigvals(sspace.P0))) >= 1e-3;
     else
-        is_P0_non_problematic = true;
+        is_P0_non_problematic = false;
     end
-    
-    # Return fmin
-    if is_cycle_causal && is_P0_non_problematic
-        
+
+    # Regular run
+    if is_cycle_non_problematic && is_Q_non_problematic && is_P0_non_problematic
+
         # Update initial conditions
         update_sspace_P0_from_params!(sspace);
         
-        # Run kalman filter
-        status = kfilter_full_sample(sspace);
+        # Run kalman filter and return -loglik
+        try            
+            status = kfilter_full_sample(sspace);
+            return -status.loglik;
 
-        # Return fmin
-        return -status.loglik;
-
+        # Problematic run
+        catch kf_run_error
+            if isa(kf_run_error, DomainError)
+                return 1/eps();
+            else
+                println("B")
+                throw(kf_run_error);
+            end
+        end
+    
+    # Problematic run
     else
         return 1/eps();
     end
@@ -89,12 +114,12 @@ function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{F
 end
 
 """
-    initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
 
 This function returns an initial estimate of the non-stationary and stationary components of each series.
 In doing so, it provides a rough starting point for the ECM algorithm.
 """
-function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
     
     # Measurement equation coefficients
     B = [1.0 0.0 1.0 zeros(1, lags-1)];
@@ -108,6 +133,8 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     else
         C_trend = [2.0 -1.0; 1.0 0.0];
         P0_trend = 1e3*ones(2,2);
+        P0_trend[1,2] *= 0.9;
+        P0_trend[2,2] *= 0.9;
     end
 
     # Stationary dynamics
@@ -131,7 +158,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     
     # Set KalmanSettings
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
-
+    
     # Maximum likelihood
     params_0     = [1e-2; 1e2; 0.90; zeros(lags-1)];
     params_lb    = [1e-3; 1e1; -2*ones(lags)];
