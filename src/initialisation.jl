@@ -116,8 +116,10 @@ end
 """
     initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
 
-This function returns an initial estimate of the non-stationary and stationary components of each series.
-In doing so, it provides a rough starting point for the ECM algorithm.
+This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
+
+# Note
+- This function models I(2) trends using the parametrisation in Kitagawa and Gersch (1996, ch. 8).
 """
 function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
     

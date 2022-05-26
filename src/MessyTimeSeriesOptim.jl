@@ -25,7 +25,7 @@ module MessyTimeSeriesOptim
 	# Export
 	export EstimSettings, DFMSettings, VARSettings, VMASettings, ValidationSettings, HyperGrid;
 	export build_Γ;
-	export initial_univariate_decomposition;
+	export initial_univariate_decomposition_kitagawa, initial_univariate_decomposition_llt;
 	export ecm;
 	export select_hyperparameters, fc_err, jackknife_err;
 end
