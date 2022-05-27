@@ -1,29 +1,32 @@
 """
-    update_sspace_Q_from_params!(params::Vector{Float64}, sspace::KalmanSettings)
+    update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
 Update `sspace.Q` from `params`. The variance of the trend is smaller by construction and by a factor of `params[2]`.
 """
-function update_sspace_Q_from_params!(params::Vector{Float64}, sspace::KalmanSettings)
-    sspace.Q[1,1] = params[1];
-    sspace.Q[2,2] = params[1]*params[2];
+function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    sspace.Q[1, 1] = params[1];
+    sspace.Q[2+is_llt, 2+is_llt] = params[1+is_llt]*params[2+is_llt];
+    if is_llt
+        sspace.Q[2, 2] = params[2];
+    end
 end
 
 """
-    update_sspace_C_from_params!(params::Vector{Float64}, sspace::KalmanSettings)
+    update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
 Update `sspace.C` from `params`.
 """
-function update_sspace_C_from_params!(params::Vector{Float64}, sspace::KalmanSettings)
+function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
     
     # Update `params` to enhance mixing
-    scaling_factor = max(1, sum(abs.(params[3:end])));
-    for i=3:length(params)
+    scaling_factor = max(1, sum(abs.(params[3+is_llt:end])));
+    for i=3+is_llt:length(params)
         params[i] /= scaling_factor; # this improves mixing since any resulting eigenvalue of the companion form of the cycle will be <= 1 in absolute value
         params[i] *= 0.98;           # while this should ensure that the eigenvalues are <= 0.98 in absolute value, numerical errors may lead to problematic cases <- these are handled below
     end
 
     # Update `sspace.C`
-    sspace.C[3, 3:end] = params[3:end];
+    sspace.C[3, 3:end] = params[3+is_llt:end];
 end
 
 """
@@ -38,15 +41,15 @@ function update_sspace_P0_from_params!(sspace::KalmanSettings)
 end
 
 """
-    fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
+    fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
 Return -1 times the log-likelihood function (or a large number if the cycle is not causal).
 """
-function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
+function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
     # Update sspace accordingly
-    update_sspace_Q_from_params!(constrained_params, sspace);
-    update_sspace_C_from_params!(constrained_params, sspace);
+    update_sspace_Q_from_params!(constrained_params, is_llt, sspace);
+    update_sspace_C_from_params!(constrained_params, is_llt, sspace);
 
     # Determine whether the cycle is problematic
     if sum(isinf.(sspace.C)) == 0
@@ -64,7 +67,7 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 
     # Determine whether P0 is problematic
     if (sum(isnan.(sspace.P0)) == 0) && (sum(isinf.(sspace.P0)) == 0)
-        is_P0_non_problematic = minimum(abs.(eigvals(sspace.P0))) >= 1e-3;
+        is_P0_non_problematic = minimum(abs.(eigvals(sspace.P0))) >= 1e-4;
     else
         is_P0_non_problematic = false;
     end
@@ -72,6 +75,9 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
     # Regular run
     if is_cycle_non_problematic && is_Q_non_problematic && is_P0_non_problematic
 
+        # Update `sspace.DQD`
+        sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
+        
         # Update initial conditions
         update_sspace_P0_from_params!(sspace);
         
@@ -97,11 +103,11 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 end
 
 """
-    fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, sspace::KalmanSettings)
+    fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
 Trasform params to have a bounded support and then run fmin!(...).
 """
-function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, sspace::KalmanSettings)
+function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
     # Unconstrained -> constrained parameters
     constrained_params = copy(params);
@@ -110,63 +116,88 @@ function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{F
     end
     
     # Return -1 times the log-likelihood function
-    return fmin!(constrained_params, sspace);
+    return fmin!(constrained_params, is_llt, sspace);
 end
 
 """
-    initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool)
 
 This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
 
 # Note
-- This function models I(2) trends using the parametrisation in Kitagawa and Gersch (1996, ch. 8).
+- If both `is_rw_trend` and `is_llt` are false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
-function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool)
+    
+    if is_rw_trend && is_llt
+        error("Either is_rw_trend or is_llt can be true");
+    end
     
     # Measurement equation coefficients
     B = [1.0 0.0 1.0 zeros(1, lags-1)];
     R = ε*I;
 
-    # Non-stationary dynamics
+    # Drift-less random walk
     if is_rw_trend
-        # Note: this is not the most compressed representation, but simplifies the remaining part of this function without significantly compromising the run time
-        C_trend = [1.0 0.0; 1.0 0.0];
+        C_trend = [1.0 0.0; 1.0 0.0]; # this is not the most compressed representation, but simplifies the remaining part of this function without significantly compromising the run time
         P0_trend = Symmetric(1e3*Matrix(I, 2, 2));
+    
+    # Local linear trend
+    elseif is_llt
+        C_trend = [1.0 1.0; 0.0 1.0];
+        P0_trend = 1e3*ones(2,2);
+        P0_trend[1,2] *= 0.9;
+        P0_trend[2,1] *= 0.9;
+    
+    # Kitagawa second order trend (special case of the local linear trend)
     else
         C_trend = [2.0 -1.0; 1.0 0.0];
         P0_trend = 1e3*ones(2,2);
         P0_trend[1,2] *= 0.9;
-        P0_trend[2,2] *= 0.9;
+        P0_trend[2,1] *= 0.9;
     end
 
     # Stationary dynamics
     C = cat(dims=[1,2], C_trend, companion_form([0.9 zeros(1, lags-1)], extended=false));
 
-    # Remaining transition coefficients
-    D = zeros(2+lags, 2);
+    # Remaining transition equation coefficients
+    D = zeros(2+lags, 2+is_llt);
     D[1,1] = 1.0;
-    D[3,2] = 1.0;
-    Q = Symmetric(1.0*Matrix(I, 2, 2));
-    Q[1,1] = 1e-4;
-    Q[2,2] = 0.1;
+    if is_rw_trend || ~is_llt
+        D[3,2] = 1.0;
+    else
+        D[2,2] = 1.0;
+        D[3,3] = 1.0;
+    end
+    
+    # Covariance matrix of the transition innovations
+    Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
 
     # Initial conditions (mean)
     X0 = zeros(2+lags);
     
     # Initial conditions (covariance)
     C_cycle = C[3:end, 3:end];
-    DQD_cycle = Symmetric(cat(dims=[1,2], Q[2,2], zeros(lags-1, lags-1)));
+    DQD_cycle = Symmetric(cat(dims=[1,2], Q[2+is_llt, 2+is_llt], zeros(lags-1, lags-1)));
     P0 = Symmetric(cat(dims=[1,2], P0_trend, solve_discrete_lyapunov(C_cycle, DQD_cycle).data));
     
     # Set KalmanSettings
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
     
+    # Initial values / bounds for the parameters
+    if is_rw_trend || ~is_llt
+        params_0  = [1e-2; 1e2; 0.90; zeros(lags-1)];
+        params_lb = [1e-4; 1e1; -2*ones(lags)];
+        params_ub = [1.00; 1e3; +2*ones(lags)];
+    else
+        params_0  = [1e-2; 1e-2; 1e2; 0.90; zeros(lags-1)];
+        params_lb = [1e-4; 1e-4; 1e1; -2*ones(lags)];
+        params_ub = [1.00; 1.00; 1e3; +2*ones(lags)];
+    end
+    
     # Maximum likelihood
-    params_0     = [1e-2; 1e2; 0.90; zeros(lags-1)];
-    params_lb    = [1e-3; 1e1; -2*ones(lags)];
-    params_ub    = [1e-1; 1e3; +2*ones(lags)];
     params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
-    res_optim    = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-3, x_reltol=1e-3, iterations=10^6));
+    res_optim = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, is_llt, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-4, x_reltol=1e-4, iterations=10^6));
     
     # Minimiser with bounded support
     minimizer_bounded = [get_bounded_logit(res_optim.minimizer[i], params_lb[i], params_ub[i]) for i in axes(res_optim.minimizer, 1)];
