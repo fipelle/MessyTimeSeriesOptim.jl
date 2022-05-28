@@ -223,3 +223,26 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     # Return output
     return trend, drift_or_trend_lagged, cycle;
 end
+
+"""
+    initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+
+This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
+
+If `is_rw_trend` is false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
+"""
+function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    trend, _, cycle = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false);
+    return trend, cycle;
+end
+
+"""
+    initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+
+This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
+
+If `is_rw_trend` is false this function models the trend as a local linear trend.
+"""
+function initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    return initial_univariate_decomposition(data, lags, ε, is_rw_trend, true);
+end
