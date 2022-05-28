@@ -5,9 +5,12 @@ Update `sspace.Q` from `params`. The variance of the trend is smaller by constru
 """
 function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
     sspace.Q[1, 1] = params[1];
-    sspace.Q[2+is_llt, 2+is_llt] = params[1+is_llt]*params[2+is_llt];
+
     if is_llt
         sspace.Q[2, 2] = params[2];
+        sspace.Q[3, 3] = 0.5*(params[1]+params[2])*params[3];
+    else
+        sspace.Q[2, 2] = params[1]*params[2];
     end
 end
 
@@ -30,13 +33,18 @@ function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, ssp
 end
 
 """
-    update_sspace_P0_from_params!(sspace::KalmanSettings)
+    update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
 
-Update `sspace.P0` from `params`.
+Update `sspace.DQD` and `sspace.P0` from `params`.
 """
-function update_sspace_P0_from_params!(sspace::KalmanSettings)
+function update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
+    
+    # Update `sspace.DQD`
+    sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
+
+    # Update `sspace.P0`
     C_cycle = sspace.C[3:end, 3:end];
-    DQD_cycle = Symmetric((sspace.D*sspace.Q*sspace.D')[3:end, 3:end]);
+    DQD_cycle = Symmetric(sspace.DQD[3:end, 3:end]);
     sspace.P0.data[3:end, 3:end] = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
 end
 
@@ -71,15 +79,12 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
     else
         is_P0_non_problematic = false;
     end
-
+    
     # Regular run
     if is_cycle_non_problematic && is_Q_non_problematic && is_P0_non_problematic
-
-        # Update `sspace.DQD`
-        sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
         
         # Update initial conditions
-        update_sspace_P0_from_params!(sspace);
+        update_sspace_DQD_and_P0_from_params!(sspace);
         
         # Run kalman filter and return -loglik
         try            
@@ -114,7 +119,7 @@ function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{F
     for i in axes(constrained_params, 1)
         constrained_params[i] = get_bounded_logit(constrained_params[i], params_lb[i], params_ub[i]);
     end
-    
+        
     # Return -1 times the log-likelihood function
     return fmin!(constrained_params, is_llt, sspace);
 end
@@ -136,7 +141,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     # Measurement equation coefficients
     B = [1.0 0.0 1.0 zeros(1, lags-1)];
     R = Îµ*I;
-
+    
     # Drift-less random walk
     if is_rw_trend
         C_trend = [1.0 0.0; 1.0 0.0]; # this is not the most compressed representation, but simplifies the remaining part of this function without significantly compromising the run time
@@ -169,7 +174,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
         D[2,2] = 1.0;
         D[3,3] = 1.0;
     end
-    
+
     # Covariance matrix of the transition innovations
     Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
 
@@ -180,10 +185,10 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     C_cycle = C[3:end, 3:end];
     DQD_cycle = Symmetric(cat(dims=[1,2], Q[2+is_llt, 2+is_llt], zeros(lags-1, lags-1)));
     P0 = Symmetric(cat(dims=[1,2], P0_trend, solve_discrete_lyapunov(C_cycle, DQD_cycle).data));
-    
+
     # Set KalmanSettings
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
-    
+
     # Initial values / bounds for the parameters
     if is_rw_trend || ~is_llt
         params_0  = [1e-2; 1e2; 0.90; zeros(lags-1)];
@@ -194,27 +199,27 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
         params_lb = [1e-4; 1e-4; 1e1; -2*ones(lags)];
         params_ub = [1.00; 1.00; 1e3; +2*ones(lags)];
     end
-    
+
     # Maximum likelihood
     params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
     res_optim = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, is_llt, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-4, x_reltol=1e-4, iterations=10^6));
-    
+
     # Minimiser with bounded support
     minimizer_bounded = [get_bounded_logit(res_optim.minimizer[i], params_lb[i], params_ub[i]) for i in axes(res_optim.minimizer, 1)];
-    
+
     # Update sspace accordingly
-    update_sspace_Q_from_params!(minimizer_bounded, sspace);
-    update_sspace_C_from_params!(minimizer_bounded, sspace);
-    update_sspace_P0_from_params!(sspace);
+    update_sspace_Q_from_params!(minimizer_bounded, is_llt, sspace);
+    update_sspace_C_from_params!(minimizer_bounded, is_llt, sspace);
+    update_sspace_DQD_and_P0_from_params!(sspace);
 
     # Retrieve optimal states
     status = kfilter_full_sample(sspace);
     smoothed_states, _ = ksmoother(sspace, status);
     smoothed_states_matrix = hcat(smoothed_states...);
     trend = smoothed_states_matrix[1, :];
+    drift_or_trend_lagged = smoothed_states_matrix[2, :];
     cycle = smoothed_states_matrix[3, :];
-    trend_variance = sspace.Q[1, 1];
     
     # Return output
-    return trend, cycle, trend_variance;
+    return trend, drift_or_trend_lagged, cycle;
 end
