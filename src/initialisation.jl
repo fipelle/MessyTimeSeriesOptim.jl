@@ -151,15 +151,11 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     elseif is_llt
         C_trend = [1.0 1.0; 0.0 1.0];
         P0_trend = 1e3*ones(2,2);
-        P0_trend[1,2] *= 0.9;
-        P0_trend[2,1] *= 0.9;
     
     # Kitagawa second order trend (special case of the local linear trend)
     else
         C_trend = [2.0 -1.0; 1.0 0.0];
         P0_trend = 1e3*ones(2,2);
-        P0_trend[1,2] *= 0.9;
-        P0_trend[2,1] *= 0.9;
     end
 
     # Stationary dynamics
@@ -195,14 +191,14 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
         params_lb = [1e-4; 1e1; -2*ones(lags)];
         params_ub = [1.00; 1e3; +2*ones(lags)];
     else
-        params_0  = [1e-2; 1e-2; 1e2; 0.90; zeros(lags-1)];
-        params_lb = [1e-4; 1e-4; 1e1; -2*ones(lags)];
+        params_0  = [1e-8; 1e-2; 1e2; 0.90; zeros(lags-1)];
+        params_lb = [0.00; 1e-4; 1e1; -2*ones(lags)];
         params_ub = [1.00; 1.00; 1e3; +2*ones(lags)];
     end
 
     # Maximum likelihood
     params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
-    res_optim = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, is_llt, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-4, x_reltol=1e-4, iterations=10^6));
+    res_optim = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, is_llt, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-6, x_reltol=1e-6, iterations=10^6));
 
     # Minimiser with bounded support
     minimizer_bounded = [get_bounded_logit(res_optim.minimizer[i], params_lb[i], params_ub[i]) for i in axes(res_optim.minimizer, 1)];
@@ -221,7 +217,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     cycle = smoothed_states_matrix[3, :];
     
     # Return output
-    return trend, drift_or_trend_lagged, cycle;
+    return trend, drift_or_trend_lagged, cycle, status;
 end
 
 """
@@ -232,7 +228,7 @@ This function returns an initial estimate of the non-stationary and stationary c
 If `is_rw_trend` is false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
 function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
-    trend, _, cycle = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false);
+    trend, _, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false);
     return trend, cycle;
 end
 
@@ -244,5 +240,6 @@ This function returns an initial estimate of the non-stationary and stationary c
 If `is_rw_trend` is false this function models the trend as a local linear trend.
 """
 function initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
-    return initial_univariate_decomposition(data, lags, ε, is_rw_trend, true);
+    trend, drift, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true);
+    return trend, drift, cycle;
 end
