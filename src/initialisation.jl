@@ -20,7 +20,7 @@ end
 Update `sspace.C` from `params`.
 """
 function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
-    
+
     # Update `params` to enhance mixing
     scaling_factor = max(1, sum(abs.(params[3+is_llt:end])));
     for i=3+is_llt:length(params)
@@ -38,7 +38,7 @@ end
 Update `sspace.DQD` and `sspace.P0` from `params`.
 """
 function update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
-    
+
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
 
@@ -79,7 +79,7 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
     else
         is_P0_non_problematic = false;
     end
-    
+
     # Regular run
     if is_cycle_non_problematic && is_Q_non_problematic && is_P0_non_problematic
         
@@ -133,11 +133,11 @@ This function returns an initial estimate of the non-stationary and stationary c
 - If both `is_rw_trend` and `is_llt` are false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
 function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Îµ::Float64, is_rw_trend::Bool, is_llt::Bool)
-    
+
     if is_rw_trend && is_llt
         error("Either is_rw_trend or is_llt can be true");
     end
-    
+
     # Measurement equation coefficients
     B = [1.0 0.0 1.0 zeros(1, lags-1)];
     R = Îµ*I;
@@ -173,11 +173,11 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
 
     # Initial conditions (mean)
     X0 = zeros(2+lags);
-    
+
     # Initial conditions (covariance)
     C_cycle = C[3:end, 3:end];
     DQD_cycle = Symmetric(cat(dims=[1,2], Q[2+is_llt, 2+is_llt], zeros(lags-1, lags-1)));
-    P0_trend = Symmetric(1e3*Matrix(I, 2, 2));
+    P0_trend = Symmetric(1e4*Matrix(I, 2, 2));
     P0 = Symmetric(cat(dims=[1,2], P0_trend, solve_discrete_lyapunov(C_cycle, DQD_cycle).data));
 
     # Set KalmanSettings
@@ -196,7 +196,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
 
     # Maximum likelihood
     params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
-    res_optim = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, is_llt, sspace), params_0_unb, Newton(), Optim.Options(f_reltol=1e-6, x_reltol=1e-6, iterations=10^6));
+    res_optim = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, is_llt, sspace), params_0_unb, LBFGS(), Optim.Options(f_reltol=1e-6, x_reltol=1e-6, iterations=10^6));
 
     # Minimiser with bounded support
     minimizer_bounded = [get_bounded_logit(res_optim.minimizer[i], params_lb[i], params_ub[i]) for i in axes(res_optim.minimizer, 1)];
@@ -213,7 +213,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     trend = smoothed_states_matrix[1, :];
     drift_or_trend_lagged = smoothed_states_matrix[2, :];
     cycle = smoothed_states_matrix[3, :];
-    
+
     # Return output
     return trend, drift_or_trend_lagged, cycle, status;
 end
