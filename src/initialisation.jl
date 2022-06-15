@@ -6,6 +6,8 @@ Update `sspace.Q` from `params`. The variance of the trend is smaller by constru
 function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
     sspace.Q[1, 1] = params[1];
 
+    @infiltrate
+
     if is_llt
         sspace.Q[2, 2] = params[2];
         sspace.Q[3, 3] = 0.5*(params[1]+params[2])*params[3];
@@ -28,6 +30,8 @@ function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, ssp
         params[i] *= 0.98;           # while this should ensure that the eigenvalues are <= 0.98 in absolute value, numerical errors may lead to problematic cases <- these are handled below
     end
 
+    @infiltrate
+
     # Update `sspace.C`
     sspace.C[3, 3:end] = params[3+is_llt:end];
 end
@@ -41,6 +45,8 @@ function update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
 
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
+
+    @infiltrate
 
     # Update `sspace.P0`
     C_cycle = sspace.C[3:end, 3:end];
@@ -58,6 +64,8 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
     # Update sspace accordingly
     update_sspace_Q_from_params!(constrained_params, is_llt, sspace);
     update_sspace_C_from_params!(constrained_params, is_llt, sspace);
+
+    @infiltrate
 
     # Determine whether the cycle is problematic
     if sum(isinf.(sspace.C)) == 0
@@ -80,12 +88,15 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
         is_P0_non_problematic = false;
     end
 
+    @infiltrate
+
     # Regular run
     if is_cycle_non_problematic && is_Q_non_problematic && is_P0_non_problematic
         
         # Update initial conditions
         update_sspace_DQD_and_P0_from_params!(sspace);
-        
+        @infiltrate
+
         # Run kalman filter and return -loglik
         try            
             status = kfilter_full_sample(sspace);
@@ -119,6 +130,8 @@ function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{F
     for i in axes(constrained_params, 1)
         constrained_params[i] = get_bounded_logit(constrained_params[i], params_lb[i], params_ub[i]);
     end
+
+    @infiltrate
     
     # Return -1 times the log-likelihood function
     return fmin!(constrained_params, is_llt, sspace);
@@ -164,6 +177,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
 
     # Local linear trend
     elseif is_llt
+        D[1,1] = 1.0;
         D[2,2] = 1.0;
         D[3,3] = 1.0;
 
@@ -176,6 +190,8 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     # Covariance matrix of the transition innovations
     Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
 
+    #@infiltrate # fine now for both kitagawa and llt
+
     # Initial conditions (mean)
     X0 = zeros(2+lags);
 
@@ -185,19 +201,23 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     P0_trend = Symmetric(1e5*Matrix(I, 2, 2));
     P0 = Symmetric(cat(dims=[1,2], P0_trend, solve_discrete_lyapunov(C_cycle, DQD_cycle).data));
 
+    #@infiltrate
+
     # Set KalmanSettings
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
 
     # Initial values / bounds for the parameters
-    if is_rw_trend || ~is_llt
-        params_0  = [1e-2; 1e2; 0.90; zeros(lags-1)];
-        params_lb = [1e-4; 1e1; -2*ones(lags)];
-        params_ub = [1.00; 1e3; +2*ones(lags)];
-    else
-        params_0  = [1e-8; 1e-2; 1e2; 0.90; zeros(lags-1)];
-        params_lb = [0.00; 1e-4; 1e1; -2*ones(lags)];
-        params_ub = [1e-4; 1.00; 1e3; +2*ones(lags)];
+    params_0  = [1e-2; 1e2; 0.90; zeros(lags-1)];
+    params_lb = [1e-4; 1e1; -2*ones(lags)];
+    params_ub = [1.00; 1e3; +2*ones(lags)];
+
+    if is_llt
+        pushfirst!(params_0,  1e-8);
+        pushfirst!(params_lb, 0.00);
+        pushfirst!(params_ub, 1e-4);
     end
+
+    @infiltrate
 
     # Maximum likelihood
     params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
@@ -206,10 +226,14 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     # Minimiser with bounded support
     minimizer_bounded = [get_bounded_logit(res_optim.minimizer[i], params_lb[i], params_ub[i]) for i in axes(res_optim.minimizer, 1)];
 
+    @infiltrate
+
     # Update sspace accordingly
     update_sspace_Q_from_params!(minimizer_bounded, is_llt, sspace);
     update_sspace_C_from_params!(minimizer_bounded, is_llt, sspace);
     update_sspace_DQD_and_P0_from_params!(sspace);
+
+    @infiltrate
 
     # Retrieve optimal states
     status = kfilter_full_sample(sspace);
@@ -218,6 +242,8 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     trend = smoothed_states_matrix[1, :];
     drift_or_trend_lagged = smoothed_states_matrix[2, :];
     cycle = smoothed_states_matrix[3, :];
+
+    @infiltrate
 
     # Return output
     return trend, drift_or_trend_lagged, cycle, status;
