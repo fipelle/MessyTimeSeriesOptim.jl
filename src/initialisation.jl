@@ -119,7 +119,7 @@ function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{F
     for i in axes(constrained_params, 1)
         constrained_params[i] = get_bounded_logit(constrained_params[i], params_lb[i], params_ub[i]);
     end
-        
+    
     # Return -1 times the log-likelihood function
     return fmin!(constrained_params, is_llt, sspace);
 end
@@ -146,13 +146,9 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     if is_rw_trend
         C_trend = [1.0 0.0; 1.0 0.0]; # this is not the most compressed representation, but simplifies the remaining part of this function without significantly compromising the run time
     
-    # Local linear trend
-    elseif is_llt
-        C_trend = [1.0 1.0; 0.0 1.0];
-    
-    # Kitagawa second order trend (special case of the local linear trend)
+    # Local linear trend or Kitagawa second order trend (special case of the local linear trend)
     else
-        C_trend = [2.0 -1.0; 1.0 0.0];
+        C_trend = [1.0 1.0; 0.0 1.0];
     end
 
     # Stationary dynamics
@@ -160,12 +156,21 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
 
     # Remaining transition equation coefficients
     D = zeros(2+lags, 2+is_llt);
-    D[1,1] = 1.0;
-    if is_rw_trend || ~is_llt
+    
+    # Drift-less random walk
+    if is_rw_trend
+        D[1,1] = 1.0;
         D[3,2] = 1.0;
-    else
+
+    # Local linear trend
+    elseif is_llt
         D[2,2] = 1.0;
         D[3,3] = 1.0;
+
+    # Kitagawa second order trend (special case of the local linear trend)
+    else
+        D[2,1] = 1.0;
+        D[3,2] = 1.0;
     end
 
     # Covariance matrix of the transition innovations
@@ -191,7 +196,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     else
         params_0  = [1e-8; 1e-2; 1e2; 0.90; zeros(lags-1)];
         params_lb = [0.00; 1e-4; 1e1; -2*ones(lags)];
-        params_ub = [1.00; 1.00; 1e3; +2*ones(lags)];
+        params_ub = [1e-4; 1.00; 1e3; +2*ones(lags)];
     end
 
     # Maximum likelihood
