@@ -458,25 +458,31 @@ end
 
 function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
 
+    # Trim sample removing initial and ending missings (when needed)
+    first_ind = findfirst(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
+    last_ind = findlast(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
+    Y_trimmed = estim.Y[:, first_ind:last_ind] |> JMatrix{Float64};
+    _, T_trimmed = size(Y_trimmed);
+
     # Compute individual trends
-    sqrt_T = floor(sqrt(estim.T)) |> Int64;
-    trends = centred_moving_average(forward_backwards_rw_interpolation(estim.Y, estim.n, estim.T), estim.n, estim.T, 2*sqrt_T+1);
-
-    # Removing trailing and leading missings
-    first_ind = findfirst(sum(ismissing.(trends), dims=1) .< estim.n)[2];
-    last_ind = findlast(sum(ismissing.(trends), dims=1) .< estim.n)[2];
-    trends = trends[:, first_ind:last_ind] |> FloatMatrix;
-
-    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
-    common_trends = ones(estim.n_trends, estim.T-2*sqrt_T);
-    for i=1:estim.n_trends
-        coordinates_current_block = findall(estim.trends_skeleton[:, i] .!= 0);
-        common_trends[i,:] = median(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
+    trends = zeros(estim.n, T_trimmed);
+    cycles = zeros(estim.n, T_trimmed);
+    for i=1:estim.n
+        @info("Initialisation > Newton's method, variable $(i)");
+        trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[i]==0);
     end
 
-    # Interpolate detrended data
-    detrended_data = interpolate_series(estim.Y[:, first_ind:last_ind] - estim.trends_skeleton*common_trends, estim.n, estim.T-2*sqrt_T);
+    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
+    common_trends = ones(estim.n_trends, T_trimmed);
+    for i=1:estim.n_trends
+        coordinates_current_block = findall(estim.trends_skeleton[:, i] .!= 0);
+        common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
+    end
 
+    # Compute detrended data
+    detrended_data = trends+cycles; # interpolated observables
+    detrended_data .-= common_trends;
+    
     # Build state-space parameters
     B_trends, C_trends, D_trends, Q_trends, X0_trends, P0_trends = initialise_trends(estim, common_trends);
     B_cycles, C_cycles, D_cycles, Q_cycles, X0_cycles, P0_cycles = initialise_cycles(estim, detrended_data);
