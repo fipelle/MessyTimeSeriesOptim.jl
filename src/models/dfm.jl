@@ -507,7 +507,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     # `coordinates_transition_current` identifies the states for which there is an associated variance that is allowed to differ from zero.
     coordinates_transition_current = findall(sum(D, dims=2)[:] .== 1);
 
-    # Coordinates per type
+    # Coordinates per type (i.e., `coordinates_transition_current` breakdown)
     coordinates_transition_non_stationary = coordinates_transition_current[coordinates_transition_current .<= 2*estim.n_non_stationary];
     coordinates_transition_stationary = coordinates_transition_current[coordinates_transition_current .> 2*estim.n_non_stationary];
     coordinates_transition_idio_cycles = coordinates_transition_stationary[1:end-estim.n_cycles];
