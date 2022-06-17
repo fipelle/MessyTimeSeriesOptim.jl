@@ -462,7 +462,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     first_ind = findfirst(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
     last_ind = findlast(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
     Y_trimmed = estim.Y[:, first_ind:last_ind] |> JMatrix{Float64};
-    _, T_trimmed = size(Y_trimmed);
+    T_trimmed = size(Y_trimmed, 2);
 
     # Compute individual trends
     trends = zeros(estim.n, T_trimmed);
