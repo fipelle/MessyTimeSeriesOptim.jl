@@ -202,10 +202,10 @@ function initialise_trends(estim::DFMSettings, common_trends::Union{FloatMatrix,
 
     # TBD: Check with one trend only!!!!!
     
-    # Estimate drift where necessary
-    drift_trends = mean_skipmissing(diff(common_trends, dims=2))[:];
-    variance_trends = std_skipmissing(diff(common_trends, dims=2))[:].^2;
-
+    # Guesses for the variances
+    variance_rw_trends = std_skipmissing(diff(common_trends, dims=2))[:].^2;
+    variance_i2_trends = std_skipmissing(@views common_trends[:, 3:end]-2*common_trends[:, 2:end-1]+common_trends[:, 1:end-2])[:].^2;
+    
     #=
     Memory pre-allocation for the state-space parameters linked to the non-stationary components
     Note: similarly to Watson and Engle (1983), estim.n_non_stationary lags of the main non-stationary components are added to compute PPs in the ECM algorithm
@@ -213,10 +213,10 @@ function initialise_trends(estim::DFMSettings, common_trends::Union{FloatMatrix,
 
     B_trends = zeros(estim.n, 2*estim.n_non_stationary);
     C_trends = zeros(2*estim.n_non_stationary, 2*estim.n_non_stationary);
-    D_trends = zeros(2*estim.n_non_stationary, estim.n_non_stationary);
-    Q_trends = zeros(estim.n_non_stationary, estim.n_non_stationary);
+    D_trends = zeros(2*estim.n_non_stationary, estim.n_trends);
+    Q_trends = zeros(estim.n_trends, estim.n_trends);
     X0_trends = zeros(2*estim.n_non_stationary);
-    P0_trends = zeros(2*estim.n_non_stationary, 2*estim.n_non_stationary);
+    P0_trends = Matrix(Inf*I, 2*estim.n_non_stationary, 2*estim.n_non_stationary); # initialisation for P0_trends finalised in initialise(...) to form a stabler P0
 
     # Initialise counter
     i = 0;
@@ -225,25 +225,19 @@ function initialise_trends(estim::DFMSettings, common_trends::Union{FloatMatrix,
     for j=1:estim.n_trends
 
         B_trends[:, 1+i] = estim.trends_skeleton[:,j];
-        n_previous_drifts = ifelse(j>1, sum(estim.drifts_selection[1:j-1]), 0)::Int64;
 
-        # Trends with drift
+        # Smooth I(2) trend
         if estim.drifts_selection[j]
             C_trends[1+i:4+i, 1+i:4+i] = [1 0 1 0; 1 0 0 0; 0 0 1 0; 0 0 1 0];
-            D_trends[1+i, j+n_previous_drifts] = 1;
-            D_trends[3+i, j+1+n_previous_drifts] = 1;
-            Q_trends[j+n_previous_drifts, j+n_previous_drifts] = variance_trends[j];
-            Q_trends[j+1+n_previous_drifts, j+1+n_previous_drifts] = estim.ε;
-            X0_trends[3+i] = drift_trends[j];
-            P0_trends[1+i:4+i, 1+i:4+i] = (1/estim.ε)*Matrix(I,4,4);
+            D_trends[3+i, j] = 1;
+            Q_trends[j, j] = variance_i2_trends[j];
             i += 4;
         
-        # Driftless trends
+        # Driftless random walk trend
         else
             C_trends[1+i:2+i, 1+i:2+i] = [1 0; 1 0];
-            D_trends[1+i, j+n_previous_drifts] = 1;
-            Q_trends[j+n_previous_drifts, j+n_previous_drifts] = variance_trends[j];
-            P0_trends[1+i:2+i, 1+i:2+i] = (1/estim.ε)*Matrix(I,2,2);
+            D_trends[1+i, j] = 1;
+            Q_trends[j, j] = variance_rw_trends[j];
             i += 2;
         end
     end
@@ -493,9 +487,8 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
     
     # Finalise initialisation of P0_trends
-    oom_maximum_P0_cycles = floor(Int, log10(maximum(P0_cycles)));      # order of magnitude of the largest entry in P0_cycles
-    P0_trends[isinf.(P0_trends)] .= 10.0^(oom_maximum_P0_cycles+4);     # non-stationary components (variances)
-    P0_trends[isnan.(P0_trends)] .= 0.0;                                # non-stationary components (covariances) -> initialise with an autocorrelation = 0.9
+    oom_maximum_P0_cycles = floor(Int, log10(maximum(P0_cycles)));  # order of magnitude of the largest entry in P0_cycles
+    P0_trends[isinf.(P0_trends)] .= 10.0^(oom_maximum_P0_cycles+4); # non-stationary components (variances)
 
     # Initial conditions
     X0 = vcat(X0_trends, X0_cycles);
