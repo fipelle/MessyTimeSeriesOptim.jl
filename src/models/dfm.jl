@@ -713,7 +713,7 @@ function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{F
 
     # CM-step for Q
     Q_cm_step = (F-G*C_star'-C_star*G'+C_star*H*C_star')/estim.T; # this matrix product could be improved, since it also considers the off-diagonal elements (which are not used in this cm-step)
-    for i=1:estim.n_non_stationary + estim.n + estim.n_cycles 
+    for i=1:estim.n_trends + estim.n + estim.n_cycles 
         Q_view[i,i] = Q_cm_step[i,i];
     end
 end
