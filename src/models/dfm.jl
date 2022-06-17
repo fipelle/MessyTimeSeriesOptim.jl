@@ -397,8 +397,17 @@ function initialise_cycles(estim::DFMSettings, data::FloatMatrix)
     # Initialise idiosyncratic cycles as white noises
     for i=1:estim.n
         
+        # Estimate ridge autoregressive coefficients
+        idio_y, idio_x = lag(permutedims(residual_data[i, :]), 1);
+        #=
+        # Remove comment to initialise as AR(1)
+        idio_coeff = idio_y*idio_x'/Symmetric(idio_x*idio_x' .+ estim.Γ[1,1]);
+        MessyTimeSeriesOptim.enforce_causality_and_invertibility!(idio_coeff);
+        =#
+        idio_coeff = zeros(1,1);
+
         # Estimate var-cov matrix of the residuals
-        idio_resid = permutedims(diff(residual_data[i,:]));
+        idio_resid = idio_y - idio_coeff*idio_x;
         idio_resid_var = (idio_resid*idio_resid')/length(idio_resid);
 
         #=
@@ -410,7 +419,7 @@ function initialise_cycles(estim::DFMSettings, data::FloatMatrix)
         coordinates_idio = 1+(i-1)*2; # place the idiosyncratic components before the common ones as in the reference paper
 
         # Convenient short cut for `C_cycles` and `P0_cycles`
-        current_companion = companion_form(zeros(1,1), extended=true);
+        current_companion = companion_form(idio_coeff, extended=true);
         current_cov_companion = Symmetric(cat(dims=[1,2], idio_resid_var[1], zeros(1,1)));
 
         # Update coefficients
