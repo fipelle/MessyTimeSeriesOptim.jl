@@ -282,10 +282,10 @@ function initialise_common_cycle(estim::DFMSettings, residual_data::FloatMatrix,
 
     if estim.lags > 1
 
-        # Initialise ridge loadings associated to the factor and its lags
-        complete_loadings = zeros(length(loadings), estim.lags);
-        complete_loadings[1,1] = 1.0;
-
+        #=
+        Data to initialise dynamic loadings
+        =#
+        
         # Regular VAR configuration
         B = [1.0 zeros(1, estim.lags-1)];
         R = Symmetric(estim.ε * ones(1,1));
@@ -301,9 +301,24 @@ function initialise_common_cycle(estim::DFMSettings, residual_data::FloatMatrix,
         # Backcast factor up to t=-estim.lags
         pc1_extended = mapreduce(Xt -> sspace.B*Xt, hcat, smoothed_states);
         pc1_extended_x = vcat([pc1_extended[:, estim.lags-j:end-j] for j=0:estim.lags-1]...);
+        pc1_extended_x_current = permutedims(pc1_extended_x[1, :]);
+        pc1_extended_x_lags = pc1_extended_x[2:end, :];
+        if estim.lags == 2
+            pc1_extended_x_lags = permutedims(pc1_extended_x_lags);
+        end
 
-        # Compute ridge loadings associated to the factor and its lags
-        complete_loadings[2:end,:] = @views data_current_block[2:end,:]*pc1_extended_x'/Symmetric(pc1_extended_x*pc1_extended_x' + estim.Γ);
+        #=
+        Initialise dynamic loadings
+        =#
+
+        # Update `data_current_block` to account for the part explained by `pc1`
+        data_current_block -= loadings*pc1_extended_x_current;
+
+        # Compute complete loadings
+        complete_loadings = zeros(length(loadings), estim.lags);
+        complete_loadings[:, 1] = loadings;
+        complete_loadings[2:end, 2:end] = data_current_block[2:end, :]*pc1_extended_x_lags'/Symmetric(pc1_extended_x_lags*pc1_extended_x_lags');
+        # TBD: Improve previous line to include a ridge penalty, if possible
 
         # Explained data
         explained_data = complete_loadings*pc1_extended_x;
