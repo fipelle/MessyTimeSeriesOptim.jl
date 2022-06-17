@@ -487,7 +487,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     B_trends, C_trends, D_trends, Q_trends, X0_trends, P0_trends = initialise_trends(estim, common_trends);
     B_cycles, C_cycles, D_cycles, Q_cycles, X0_cycles, P0_cycles = initialise_cycles(estim, detrended_data);
     B = hcat(B_trends, B_cycles);
-    R = Symmetric(Matrix(estim.ε * I, estim.n, estim.n));
+    R = estim.ε * I;
     C = cat(dims=[1,2], C_trends, C_cycles);
     D = cat(dims=[1,2], D_trends, D_cycles);
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
