@@ -491,6 +491,11 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     C = cat(dims=[1,2], C_trends, C_cycles);
     D = cat(dims=[1,2], D_trends, D_cycles);
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
+    
+    # Finalise initialisation of P0_trends
+    oom_maximum_P0_cycles = floor(Int, log10(maximum(P0_cycles)));      # order of magnitude of the largest entry in P0_cycles
+    P0_trends[isinf.(P0_trends)] .= 10.0^(oom_maximum_P0_cycles+4);     # non-stationary components (variances)
+    P0_trends[isnan.(P0_trends)] .= 0.0;                                # non-stationary components (covariances) -> initialise with an autocorrelation = 0.9
 
     # Initial conditions
     X0 = vcat(X0_trends, X0_cycles);
