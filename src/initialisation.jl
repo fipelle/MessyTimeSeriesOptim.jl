@@ -60,18 +60,18 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
     update_sspace_C_from_params!(constrained_params, is_llt, sspace);
 
     # Determine whether the cycle is problematic
-    if sum(isinf.(sspace.C)) == 0
+    if (sum(isnan.(sspace.C)) == 0) && (sum(isinf.(sspace.C)) == 0)
         is_cycle_non_problematic = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
     else
         is_cycle_non_problematic = false;
     end
 
     # Determine whether Q is problematic
-    if sum(isinf.(sspace.Q)) == 0
+    if (sum(isnan.(sspace.Q)) == 0) && (sum(isinf.(sspace.Q)) == 0)
         is_Q_non_problematic = true;
     else
         is_Q_non_problematic = false;
-    end    
+    end
 
     # Determine whether P0 is problematic
     if (sum(isnan.(sspace.P0)) == 0) && (sum(isinf.(sspace.P0)) == 0)

@@ -170,6 +170,12 @@ function check_model_bounds(estim::DFMSettings)
         if size(estim.trends_skeleton, 2) != size(estim.trends_free_params, 2)
             throw(DomainError);
         end
+
+        for row in eachrow(estim.trends_skeleton)
+            if length(findall(row .!= 0.0)) > 1
+                error("Linear combinations of different trends are not supported yet!"); # TBD: implement it!
+            end
+        end
     end
 
     if eltype(estim.cycles_skeleton) <: FloatMatrix
@@ -487,19 +493,20 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     cycles = zeros(estim.n, T_trimmed);
     for i=1:estim.n
         @info("Initialisation > Newton's method, variable $(i)");
-        trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[i]==0);
+        drifts_selection_id = findfirst(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
+        trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
     end
 
     # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
     common_trends = ones(estim.n_trends, T_trimmed);
     for i=1:estim.n_trends
-        coordinates_current_block = findall(estim.trends_skeleton[:, i] .!= 0);
+        coordinates_current_block = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
         common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
     end
 
     # Compute detrended data
     detrended_data = trends+cycles; # interpolated observables
-    detrended_data .-= common_trends;
+    detrended_data .-= estim.trends_skeleton*common_trends;
     
     # Build state-space parameters
     B_trends, C_trends, D_trends, Q_trends, X0_trends, P0_trends = initialise_trends(estim, common_trends);
@@ -513,6 +520,8 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     # Finalise initialisation of P0_trends
     oom_maximum_P0_cycles = floor(Int, log10(maximum(P0_cycles)));  # order of magnitude of the largest entry in P0_cycles
     P0_trends[isinf.(P0_trends)] .= 10.0^(oom_maximum_P0_cycles+4); # non-stationary components (variances)
+
+    @infiltrate
 
     # Initial conditions
     X0 = vcat(X0_trends, X0_cycles);
@@ -534,6 +543,8 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     coordinates_transition_lagged = sort(vcat(coordinates_transition_non_stationary, coordinates_transition_idio_cycles, [coordinates_transition_common_cycles .+ i for i=0:estim.lags-1]...));
     coordinates_transition_PPs = coordinates_transition_lagged .+ 1;
 
+    @infiltrate
+
     # `coordinates_transition_P0` identifies the entry in P0 that the cm-step should recompute
     coordinates_transition_P0 = findall(P0[:] .!= 0.0);
 
@@ -548,6 +559,8 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     =#
 
     coordinates_measurement_states = copy(coordinates_transition_lagged);
+
+    @infiltrate
 
     # Convenient views for using sspace.B in the expected logliklihood and cm steps calculations
     B_star = @view sspace.B[:, coordinates_measurement_states];
@@ -572,6 +585,8 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     # View on Q from DQD
     Q_view = @view sspace.DQD.data[coordinates_transition_current, coordinates_transition_current];
 
+    @infiltrate
+    
     # Return output
     return sspace, B_star, C_star, Q_view, coordinates_measurement_states, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs, coordinates_transition_P0, coordinates_free_params_B, coordinates_free_params_C;
 end
@@ -712,10 +727,17 @@ function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{F
     end
 
     # CM-step for Q
+    @infiltrate
+
     Q_cm_step = (F-G*C_star'-C_star*G'+C_star*H*C_star')/estim.T; # this matrix product could be improved, since it also considers the off-diagonal elements (which are not used in this cm-step)
+
+    @infiltrate
+
     for i=1:estim.n_trends + estim.n + estim.n_cycles 
         Q_view[i,i] = Q_cm_step[i,i];
     end
+
+    @infiltrate
 end
 
 #=
