@@ -243,11 +243,12 @@ Initialise M, N and O.
 Initialise M, N and O to nothing.
 """
 function initialise_ecm_stats_measurement(estim::EstimSettings, coordinates_measurement_states::IntVector)
-    M = zeros(estim.n, estim.m);
+    len_measurement_states = length(coordinates_measurement_states);
+    M = zeros(estim.n, len_measurement_states);
     N = Vector{SparseMatrixCSC{Float64, Int64}}(undef, estim.T);
     O = Array{VectorsArray{Float64},1}(undef, estim.T);
     buffer_M = zeros(estim.n);
-    buffer_O = Symmetric(zeros(estim.m, estim.m));
+    buffer_O = Symmetric(zeros(len_measurement_states, len_measurement_states));
     return M, N, O, buffer_M, buffer_O;
 end
 
