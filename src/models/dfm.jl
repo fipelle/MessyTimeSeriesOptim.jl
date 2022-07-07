@@ -530,8 +530,6 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     X0 = vcat(X0_trends, X0_cycles);
     P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_cycles));
 
-    #@infiltrate # check just the cat order for B, R, C, D, Q, X0 and P0 - the internal structure is fine. Next, go to the next breakpoint.
-
     # Generate sspace
     sspace = KalmanSettings(estim.Y, B, R, C, D, Q, X0, P0, compute_loglik=false);
 
@@ -548,8 +546,6 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     coordinates_transition_lagged = sort(vcat(coordinates_transition_non_stationary, coordinates_transition_idio_cycles, [coordinates_transition_common_cycles .+ i for i=0:estim.lags-1]...));
     coordinates_transition_PPs = coordinates_transition_lagged .+ 1;
 
-    #@infiltrate
-
     # `coordinates_transition_P0` identifies the entry in P0 that the cm-step should recompute
     coordinates_transition_P0 = findall(P0[:] .!= 0.0);
 
@@ -565,9 +561,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     =#
 
     coordinates_measurement_states = copy(coordinates_transition_lagged);
-
-    #@infiltrate
-
+    
     # Convenient views for using sspace.B in the expected logliklihood and cm steps calculations
     B_star = @view sspace.B[:, coordinates_measurement_states];
 
@@ -588,12 +582,10 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     free_params_C_idio_cycles = Matrix(I, estim.n, estim.n);
     free_params_C_common_cycles = cat(dims=[1,2], [ones(1, estim.lags) for i=1:estim.n_cycles]...) .== 1;
     coordinates_free_params_C = cartesian_C[cat(dims=[1,2], free_params_C_trends, free_params_C_idio_cycles, free_params_C_common_cycles)];
-
     @infiltrate
 
     # View on Q from DQD
     Q_view = @view sspace.DQD.data[coordinates_transition_current, coordinates_transition_current];
-
     @infiltrate
     
     # Return output
