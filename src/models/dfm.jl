@@ -569,24 +569,21 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     cartesian_B = CartesianIndices(B_star);
     free_params_B_trends = zeros(estim.n, estim.n_trends) .== 1; # TBD: this is a bit tricky to relax since the coordinates in `coordinates_measurement_states` refer to the drifts for the I(2) trends - the direct Kitagawa representation for the smooth trend may help implementing it
     free_params_B_idio_cycles = zeros(estim.n, estim.n) .== 1;
-    free_params_B_common_cycles = hcat(permutedims([estim.cycles_free_params[:,i] for i=1:estim.n_cycles, j=1:estim.lags])...);
+    free_params_B_common_cycles = hcat(permutedims([estim.cycles_free_params[:, i] for i=1:estim.n_cycles, j=1:estim.lags])...);
     coordinates_free_params_B = cartesian_B[hcat(free_params_B_trends, free_params_B_idio_cycles, free_params_B_common_cycles)];
-    @infiltrate
     
     # Convenient views for using sspace.C in the expected logliklihood and cm steps calculations
     C_star = @view sspace.C[coordinates_transition_current, coordinates_transition_lagged];
 
     # Coordinates free parameters (C)
     cartesian_C = CartesianIndices(C_star);
-    free_params_C_trends = zeros(estim.n_non_stationary, estim.n_non_stationary) .== 1;
+    free_params_C_trends = zeros(estim.n_trends, estim.n_trends) .== 1;
     free_params_C_idio_cycles = Matrix(I, estim.n, estim.n);
     free_params_C_common_cycles = cat(dims=[1,2], [ones(1, estim.lags) for i=1:estim.n_cycles]...) .== 1;
     coordinates_free_params_C = cartesian_C[cat(dims=[1,2], free_params_C_trends, free_params_C_idio_cycles, free_params_C_common_cycles)];
-    @infiltrate
-
+    
     # View on Q from DQD
     Q_view = @view sspace.DQD.data[coordinates_transition_current, coordinates_transition_current];
-    @infiltrate
     
     # Return output
     return sspace, B_star, C_star, Q_view, coordinates_measurement_states, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs, coordinates_transition_P0, coordinates_free_params_B, coordinates_free_params_C;
