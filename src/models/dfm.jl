@@ -689,7 +689,7 @@ function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{F
     # Counter for common cycles and base coordinates
     n_previous_common_cycles = 0;
     base_coordinates_cycle = collect(1:estim.lags);
-
+    
     # Loop over the free parameters
     for (position, ij) in enumerate(coordinates_free_params_C)
 
@@ -724,10 +724,12 @@ function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{F
         end
     end
 
-    # CM-step for Q
-    # - previously implemented with `Q_cm_step = (F-G*C_star'-C_star*G'+C_star*H*C_star')/estim.T`;
-
-    for i=1:estim.n_trends + estim.n + estim.n_cycles 
+    #=
+    CM-step for Q
+    - previously implemented with `Q_cm_step = Diagonal(F-G*C_star'-C_star*G'+C_star*H*C_star')/estim.T`;
+    =#
+    
+    for i=1:estim.n_trends + estim.n + estim.n_cycles
         Q_view[i, i] = @views F[i, i] + (H*C_star[i, :] - 2*G[i, :])'*C_star[i, :];
         Q_view[i, i] /= estim.T;
     end
