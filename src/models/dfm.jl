@@ -171,6 +171,10 @@ function check_model_bounds(estim::DFMSettings)
             throw(DomainError);
         end
 
+        if sum(estim.trends_free_params .!= 0.0) != 0
+            error("The estimation of the trends' measurement coefficients is not supported yet!"); # TBD: it may be easier to implement by using the direct Kitagawa representation with 3 states rather than 4
+        end
+
         for row in eachrow(estim.trends_skeleton)
             if length(findall(row .!= 0.0)) > 1
                 error("Linear combinations of different trends are not supported yet!"); # TBD: implement it!
@@ -520,18 +524,19 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     # Finalise initialisation of P0_trends
     oom_maximum_P0_cycles = floor(Int, log10(maximum(P0_cycles)));  # order of magnitude of the largest entry in P0_cycles
     P0_trends[isinf.(P0_trends)] .= 10.0^(oom_maximum_P0_cycles+4); # non-stationary components (variances)
-
-    @infiltrate
+    # TBD: for now, P0_trends is a bit higher than expected (1e8 with the current example) - check the data standardisation
 
     # Initial conditions
     X0 = vcat(X0_trends, X0_cycles);
     P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_cycles));
 
+    #@infiltrate # check just the cat order for B, R, C, D, Q, X0 and P0 - the internal structure is fine. Next, go to the next breakpoint.
+
     # Generate sspace
     sspace = KalmanSettings(estim.Y, B, R, C, D, Q, X0, P0, compute_loglik=false);
 
     # `coordinates_transition_current` identifies the states for which there is an associated variance that is allowed to differ from zero.
-    coordinates_transition_current = findall(sum(D, dims=2)[:] .== 1);
+    coordinates_transition_current = findall(sum(D, dims=2)[:] .== 1); # clearly, this and the following coordinates do not have the ids for the level of the trends, since dfm.jl uses Kitagawa's smooth parametrisation
 
     # Coordinates per type (i.e., `coordinates_transition_current` breakdown)
     coordinates_transition_non_stationary = coordinates_transition_current[coordinates_transition_current .<= 2*estim.n_non_stationary];
@@ -543,7 +548,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     coordinates_transition_lagged = sort(vcat(coordinates_transition_non_stationary, coordinates_transition_idio_cycles, [coordinates_transition_common_cycles .+ i for i=0:estim.lags-1]...));
     coordinates_transition_PPs = coordinates_transition_lagged .+ 1;
 
-    @infiltrate
+    #@infiltrate
 
     # `coordinates_transition_P0` identifies the entry in P0 that the cm-step should recompute
     coordinates_transition_P0 = findall(P0[:] .!= 0.0);
@@ -555,23 +560,25 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     `coordinates_measurement_states` identifies the states for which the associated loadings are allowed to differ from zero.
     Note: the most compact version for this representation would be setdiff(coordinates_transition_lagged, coordinates_transition_drifts).
           However, this implementation of the DFM also includes the columns for the drifts, which always have zero loadings.
-          The main advantage of this choice is that estim.Γ_extended can be also used for the loadings cm step.
+          This is purely a shortcut to simplify the implementation (estim.Γ_extended can be also used for the loadings cm step) and
+          it does not impact the zero constraints described above.
     =#
 
     coordinates_measurement_states = copy(coordinates_transition_lagged);
 
-    @infiltrate
+    #@infiltrate
 
     # Convenient views for using sspace.B in the expected logliklihood and cm steps calculations
     B_star = @view sspace.B[:, coordinates_measurement_states];
 
     # Coordinates free parameters (B)
     cartesian_B = CartesianIndices(B_star);
-    free_params_B_trends = hcat([ifelse(estim.drifts_selection[i], hcat(estim.trends_free_params[:,i], ones(estim.n).==0), estim.trends_free_params[:,i]) for i=1:estim.n_trends]...);
+    free_params_B_trends = zeros(estim.n, estim.n_trends) .== 1; # TBD: this is a bit tricky to relax since the coordinates in `coordinates_measurement_states` refer to the drifts for the I(2) trends - the direct Kitagawa representation for the smooth trend may help implementing it
     free_params_B_idio_cycles = zeros(estim.n, estim.n) .== 1;
     free_params_B_common_cycles = hcat(permutedims([estim.cycles_free_params[:,i] for i=1:estim.n_cycles, j=1:estim.lags])...);
     coordinates_free_params_B = cartesian_B[hcat(free_params_B_trends, free_params_B_idio_cycles, free_params_B_common_cycles)];
-
+    @infiltrate
+    
     # Convenient views for using sspace.C in the expected logliklihood and cm steps calculations
     C_star = @view sspace.C[coordinates_transition_current, coordinates_transition_lagged];
 
@@ -581,6 +588,8 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     free_params_C_idio_cycles = Matrix(I, estim.n, estim.n);
     free_params_C_common_cycles = cat(dims=[1,2], [ones(1, estim.lags) for i=1:estim.n_cycles]...) .== 1;
     coordinates_free_params_C = cartesian_C[cat(dims=[1,2], free_params_C_trends, free_params_C_idio_cycles, free_params_C_common_cycles)];
+
+    @infiltrate
 
     # View on Q from DQD
     Q_view = @view sspace.DQD.data[coordinates_transition_current, coordinates_transition_current];
