@@ -17,16 +17,7 @@ end
 
 Update `sspace.C` from `params`.
 """
-function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
-
-    # Update `params` to enhance mixing
-    scaling_factor = max(1, sum(abs.(params[2+is_llt:end])));
-    for i=2+is_llt:length(params)
-        params[i] /= scaling_factor; # this improves mixing since any resulting eigenvalue of the companion form of the cycle will be <= 1 in absolute value
-        params[i] *= 0.98;           # while this should ensure that the eigenvalues are <= 0.98 in absolute value, numerical errors may lead to problematic cases <- these are handled below
-    end
-
-    # Update `sspace.C`
+function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)    
     sspace.C[3, 3:end] = params[2+is_llt:end];
 end
 
