@@ -295,7 +295,7 @@ Do not update ECM statistics for the measurement equation of models for which th
 """
 function update_ecm_stats_measurement!(barrier_M::FloatMatrix, estim::EstimSettings, smoother_arrays::SmootherArrays, coordinates_measurement_states::IntVector, ind_not_missings::IntVector, t::Int64, Xs::FloatVector, Ps::SymMatrix)
 
-    # Views
+    # Views used for computing M and O (based on `coordinates_measurement_states`)
     Y_obs = @view estim.Y[ind_not_missings, t];
     Xs_view = @view Xs[coordinates_measurement_states];
     Ps_view = @view Ps[coordinates_measurement_states, coordinates_measurement_states];
