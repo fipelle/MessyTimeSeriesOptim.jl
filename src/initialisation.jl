@@ -1,16 +1,14 @@
 """
     update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
-Update `sspace.Q` from `params`. The variance of the trend is smaller by construction and by a factor of `params[2]`.
+Update `sspace.Q` from `params`.
 """
 function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
-    sspace.Q[1, 1] = params[1];
-
     if is_llt
-        sspace.Q[2, 2] = params[2];
-        sspace.Q[3, 3] = 0.5*(params[1]+params[2])*params[3];
+        sspace.Q[1, 1] = sspace.Q[2, 2]*params[1];
+        sspace.Q[3, 3] = sspace.Q[2, 2]*params[2];
     else
-        sspace.Q[2, 2] = params[1]*params[2];
+        sspace.Q[2, 2] = sspace.Q[1, 1]*params[1];
     end
 end
 
@@ -22,14 +20,14 @@ Update `sspace.C` from `params`.
 function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
     # Update `params` to enhance mixing
-    scaling_factor = max(1, sum(abs.(params[3+is_llt:end])));
-    for i=3+is_llt:length(params)
+    scaling_factor = max(1, sum(abs.(params[2+is_llt:end])));
+    for i=2+is_llt:length(params)
         params[i] /= scaling_factor; # this improves mixing since any resulting eigenvalue of the companion form of the cycle will be <= 1 in absolute value
         params[i] *= 0.98;           # while this should ensure that the eigenvalues are <= 0.98 in absolute value, numerical errors may lead to problematic cases <- these are handled below
     end
 
     # Update `sspace.C`
-    sspace.C[3, 3:end] = params[3+is_llt:end];
+    sspace.C[3, 3:end] = params[2+is_llt:end];
 end
 
 """
@@ -177,6 +175,9 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     # Covariance matrix of the transition innovations
     Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
 
+    # Fix the variance of the drift (or trend in the case in which is_rw_trend == true)
+    Q[1+is_llt, 1+is_llt] = 1e-4;
+
     # Initial conditions (mean)
     X0 = zeros(2+lags);
 
@@ -192,15 +193,30 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     # Set KalmanSettings
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
 
-    # Initial values / bounds for the parameters
-    params_0  = [1e-2; 1e2; 0.90; zeros(lags-1)];
-    params_lb = [1e-4; 1e1; -2*ones(lags)];
-    params_ub = [1.00; 1e3; +2*ones(lags)];
+    #=
+    Initial values / bounds for the parameters
+
+    When is_llt == false:
+    - sigma_{cycle}^2 / sigma_{drift}^2
+    - AR(p) parameters
+
+    When is_llt == true:
+    - sigma_{trend}^2 / sigma_{drift}^2
+    - sigma_{cycle}^2 / sigma_{trend}^2
+    - AR(p) parameters
+
+    Note 1: sigma_{drift}^2 is fixed to 1e-4 during the initialisation
+    Note 2: in the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
+    =#
+
+    params_0  = [1e3; 0.90; zeros(lags-1)];
+    params_lb = [1e2; -2*ones(lags)];
+    params_ub = [1e4; +2*ones(lags)];
 
     if is_llt
-        pushfirst!(params_0,  1e-8);
-        pushfirst!(params_lb, 0.00);
-        pushfirst!(params_ub, 1e-4);
+        pushfirst!(params_0,  1e-3);
+        pushfirst!(params_lb, 1e-4);
+        pushfirst!(params_ub, 1e-2);
     end
     
     # Maximum likelihood
