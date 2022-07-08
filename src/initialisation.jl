@@ -119,7 +119,7 @@ function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{F
     for i in axes(constrained_params, 1)
         constrained_params[i] = get_bounded_logit(constrained_params[i], params_lb[i], params_ub[i]);
     end
-        
+    
     # Return -1 times the log-likelihood function
     return fmin!(constrained_params, is_llt, sspace);
 end
@@ -183,9 +183,12 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     # Initial conditions (covariance)
     C_cycle = C[3:end, 3:end];
     DQD_cycle = Symmetric(cat(dims=[1,2], Q[2+is_llt, 2+is_llt], zeros(lags-1, lags-1)));
-    P0_trend = Symmetric(1e5*Matrix(I, 2, 2));
-    P0 = Symmetric(cat(dims=[1,2], P0_trend, solve_discrete_lyapunov(C_cycle, DQD_cycle).data));
-
+    P0_cycle = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
+    P0_trend = Symmetric(Inf*Matrix(I, 2, 2));
+    oom_maximum_P0_cycle = floor(Int, log10(maximum(P0_cycle)));  # order of magnitude of the largest entry in P0_cycle
+    P0_trend[isinf.(P0_trend)] .= 10.0^(oom_maximum_P0_cycle+4); # non-stationary components (variances)
+    P0 = Symmetric(cat(dims=[1,2], P0_trend, P0_cycle));
+    
     # Set KalmanSettings
     sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
 

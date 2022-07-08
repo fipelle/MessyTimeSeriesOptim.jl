@@ -502,7 +502,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     end
 
     # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
-    common_trends = ones(estim.n_trends, T_trimmed);
+    common_trends = zeros(estim.n_trends, T_trimmed);
     for i=1:estim.n_trends
         coordinates_current_block = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
         common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
