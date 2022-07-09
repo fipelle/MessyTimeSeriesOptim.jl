@@ -197,9 +197,10 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     
     # Maximum likelihood
     tuple_fmin_args = (is_llt, sspace);
-    prob = OptimizationFunction(call_fmin!) #, Optimization.AutoForwardDiff());
+    prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff());
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_NELDERMEAD());
+    res_optim = solve(prob, NLopt.LN_NELDERMEAD(), abstol=0.0, reltol=1e-3);
+    minimizer_bounded = res_optim.u;
     
     # Update sspace accordingly
     update_sspace_Q_from_params!(minimizer_bounded, is_llt, sspace);
