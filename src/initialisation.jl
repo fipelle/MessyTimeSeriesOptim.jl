@@ -189,7 +189,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     P0_trend = Symmetric(Inf*Matrix(I, 2, 2));
     
     # Reference points to compute the order of magnitude
-    max_abs_data = maximum(abs.(data));
+    max_abs_data = maximum(skipmissing(abs.(data)));
     max_abs_P0_cycle = maximum(abs.(P0_cycle));
     max_abs_data_P0_cycle = max(max_abs_data, max_abs_P0_cycle);
     

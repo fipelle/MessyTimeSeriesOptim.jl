@@ -522,7 +522,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
     
     # Reference points to compute the order of magnitude
-    max_abs_data = maximum(abs.(estim.Y));
+    max_abs_data = maximum(skipmissing(abs.(estim.Y)));
     max_abs_P0_cycles = maximum(abs.(P0_cycles));
     max_abs_data_P0_cycles = max(max_abs_data, max_abs_P0_cycles);
     
