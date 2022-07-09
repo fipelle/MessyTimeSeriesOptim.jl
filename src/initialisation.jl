@@ -96,22 +96,7 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
     end
 end
 
-"""
-    fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
-
-Trasform params to have a bounded support and then run fmin!(...).
-"""
-function fmin_logit_transformation!(params::Vector{Float64}, params_lb::Vector{Float64}, params_ub::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
-
-    # Unconstrained -> constrained parameters
-    constrained_params = copy(params);
-    for i in axes(constrained_params, 1)
-        constrained_params[i] = get_bounded_logit(constrained_params[i], params_lb[i], params_ub[i]);
-    end
-    
-    # Return -1 times the log-likelihood function
-    return fmin!(constrained_params, is_llt, sspace);
-end
+call_fmin!(constrained_params::Vector{Float64}, tuple_fmin_args::Tuple) = fmin!(constrained_params, tuple_fmin_args...);
 
 """
     initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Îµ::Float64, is_rw_trend::Bool, is_llt::Bool)
@@ -211,11 +196,10 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     end
     
     # Maximum likelihood
-    params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
-    res_optim = Optim.optimize(params -> fmin_logit_transformation!(params, params_lb, params_ub, is_llt, sspace), params_0_unb, LBFGS(), Optim.Options(f_reltol=1e-6, x_reltol=1e-6, iterations=10^6));
-
-    # Minimiser with bounded support
-    minimizer_bounded = [get_bounded_logit(res_optim.minimizer[i], params_lb[i], params_ub[i]) for i in axes(res_optim.minimizer, 1)];
+    tuple_fmin_args = (is_llt, sspace);
+    prob = OptimizationFunction(call_fmin!) #, Optimization.AutoForwardDiff());
+    prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
+    res_optim = solve(prob, NLopt.LN_NELDERMEAD());
     
     # Update sspace accordingly
     update_sspace_Q_from_params!(minimizer_bounded, is_llt, sspace);
