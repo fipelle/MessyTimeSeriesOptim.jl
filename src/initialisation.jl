@@ -96,7 +96,32 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
     end
 end
 
+"""
+    call_fmin!(constrained_params::Vector{Float64}, tuple_fmin_args::Tuple)
+
+APIs to call `fmin!` with Tuple parameters.
+"""
 call_fmin!(constrained_params::Vector{Float64}, tuple_fmin_args::Tuple) = fmin!(constrained_params, tuple_fmin_args...);
+
+"""
+    call_reparametrised_fmin!(params::Vector{Float64}, tuple_args::Tuple)
+
+APIs to call `fmin!` after transforming the candidate parameters so that their support is unbounded.
+"""
+function call_reparametrised_fmin!(params::Vector{Float64}, tuple_args::Tuple)
+
+    params_lb = tuple_args[1];
+    params_ub = tuple_args[2];
+    tuple_fmin_args = tuple_args[3:end];
+
+    # Unconstrained -> constrained parameters
+    constrained_params = similar(params);
+    for i in axes(constrained_params, 1)
+        constrained_params[i] = get_bounded_logit(params[i], params_lb[i], params_ub[i]);
+    end
+    
+    return call_fmin!(constrained_params, tuple_fmin_args);
+end
 
 """
     initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Îµ::Float64, is_rw_trend::Bool, is_llt::Bool)
@@ -197,7 +222,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     
     # Maximum likelihood
     tuple_fmin_args = (is_llt, sspace);
-    prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff());
+    prob = OptimizationFunction(call_fmin!) #, Optimization.AutoForwardDiff());
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
     res_optim = solve(prob, NLopt.LN_NELDERMEAD(), abstol=0.0, reltol=1e-3);
     minimizer_bounded = res_optim.u;
