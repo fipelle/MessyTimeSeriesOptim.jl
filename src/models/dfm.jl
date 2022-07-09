@@ -521,10 +521,16 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     D = cat(dims=[1,2], D_trends, D_cycles);
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
     
+    # Reference points to compute the order of magnitude
+    max_abs_data = maximum(abs.(estim.Y));
+    max_abs_P0_cycles = maximum(abs.(P0_cycles));
+    max_abs_data_P0_cycles = max(max_abs_data, max_abs_P0_cycles);
+    
+    # Reference order of magnitude
+    reference_oom = floor(Int, log10(max_abs_data_P0_cycles));
+
     # Finalise initialisation of P0_trends
-    oom_maximum_P0_cycles = floor(Int, log10(maximum(P0_cycles)));  # order of magnitude of the largest entry in P0_cycles
-    P0_trends[isinf.(P0_trends)] .= 10.0^(oom_maximum_P0_cycles+4); # non-stationary components (variances)
-    # TBD: for now, P0_trends is a bit higher than expected (1e8 with the current example) - check the data standardisation
+    P0_trends[isinf.(P0_trends)] .= 10.0^(reference_oom+3);
 
     # Initial conditions
     X0 = vcat(X0_trends, X0_cycles);

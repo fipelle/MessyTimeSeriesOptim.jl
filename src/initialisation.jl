@@ -177,7 +177,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
 
     # Fix the variance of the drift (or trend in the case in which is_rw_trend == true)
-    Q[1+is_llt, 1+is_llt] = 1e-4;
+    Q[1+is_llt, 1+is_llt] = 1e-3;
 
     # Initial conditions (mean)
     X0 = zeros(2+lags);
@@ -187,8 +187,19 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     DQD_cycle = Symmetric(cat(dims=[1,2], Q[2+is_llt, 2+is_llt], zeros(lags-1, lags-1)));
     P0_cycle = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
     P0_trend = Symmetric(Inf*Matrix(I, 2, 2));
-    oom_maximum_P0_cycle = floor(Int, log10(maximum(P0_cycle)));  # order of magnitude of the largest entry in P0_cycle
-    P0_trend[isinf.(P0_trend)] .= 10.0^(oom_maximum_P0_cycle+4); # non-stationary components (variances)
+    
+    # Reference points to compute the order of magnitude
+    max_abs_data = maximum(abs.(data));
+    max_abs_P0_cycle = maximum(abs.(P0_cycle));
+    max_abs_data_P0_cycle = max(max_abs_data, max_abs_P0_cycle);
+    
+    # Reference order of magnitude
+    reference_oom = floor(Int, log10(max_abs_data_P0_cycle));
+    
+    # Replace infs with large scalar
+    P0_trend[isinf.(P0_trend)] .= 10.0^(reference_oom+3);
+    
+    # Merge into `P0`
     P0 = Symmetric(cat(dims=[1,2], P0_trend, P0_cycle));
     
     # Set KalmanSettings
@@ -211,8 +222,8 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     =#
 
     params_0  = [1e3; 0.90; zeros(lags-1)];
-    params_lb = [1e2; -2*ones(lags)];
-    params_ub = [1e4; +2*ones(lags)];
+    params_lb = [1e2; -1*ones(lags)];
+    params_ub = [1e4; +1*ones(lags)];
 
     if is_llt
         pushfirst!(params_0,  1e-3);
@@ -220,12 +231,24 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
         pushfirst!(params_ub, 1e-2);
     end
     
-    # Maximum likelihood
+    # Best derivative-free option from NLopt -> NLopt.LN_SBPLX()
+
+    # Maximum likelihood    
     tuple_fmin_args = (is_llt, sspace);
-    prob = OptimizationFunction(call_fmin!) #, Optimization.AutoForwardDiff());
+    prob = OptimizationFunction(call_fmin!);
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_NELDERMEAD(), abstol=0.0, reltol=1e-3);
+    res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.0, reltol=1e-3);
     minimizer_bounded = res_optim.u;
+
+    #=
+    # Alternative procedure
+    tuple_fmin_args = (params_lb, params_ub, is_llt, sspace);
+    params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
+    prob = OptimizationFunction(call_reparametrised_fmin!);
+    prob = OptimizationProblem(prob, params_0_unb, tuple_fmin_args);
+    res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.0, reltol=1e-3);
+    minimizer_bounded_1 = [get_bounded_logit(res_optim.u[i], params_lb[i], params_ub[i]) for i in axes(res_optim.u, 1)];
+    =#
     
     # Update sspace accordingly
     update_sspace_Q_from_params!(minimizer_bounded, is_llt, sspace);
