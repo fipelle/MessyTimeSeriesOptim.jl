@@ -556,7 +556,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     coordinates_transition_P0 = findall(P0[:] .!= 0.0);
 
     # Comment this out if you want to keep the original diffuse initialisation for the non-stationary components
-    # filter!(coordinate->coordinate.I[1] > size(P0_trends,1), coordinates_transition_P0);
+    #coordinates_transition_P0 = findall((P0[:] .!= 0.0) .& (P0[:] .!= P0[1,1]));
 
     #=
     `coordinates_measurement_states` identifies the states for which the associated loadings are allowed to differ from zero.

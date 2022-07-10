@@ -5,10 +5,12 @@ Update `sspace.Q` from `params`.
 """
 function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
     if is_llt
-        sspace.Q[1, 1] = sspace.Q[2, 2]*params[1];
-        sspace.Q[3, 3] = sspace.Q[2, 2]*params[2];
+        sspace.Q[1, 1] = params[1]*params[2];
+        sspace.Q[2, 2] = params[2];
+        sspace.Q[3, 3] = params[2]*params[3];
     else
-        sspace.Q[2, 2] = sspace.Q[1, 1]*params[1];
+        sspace.Q[1, 1] = params[1];
+        sspace.Q[2, 2] = params[1]*params[2];
     end
 end
 
@@ -18,7 +20,7 @@ end
 Update `sspace.C` from `params`.
 """
 function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)    
-    sspace.C[3, 3:end] = params[2+is_llt:end];
+    sspace.C[3, 3:end] = params[3+is_llt:end];
 end
 
 """
@@ -176,9 +178,6 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     # Covariance matrix of the transition innovations
     Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
 
-    # Fix the variance of the drift (or trend in the case in which is_rw_trend == true)
-    Q[1+is_llt, 1+is_llt] = 1e-3;
-
     # Initial conditions (mean)
     X0 = zeros(2+lags);
 
@@ -221,10 +220,10 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     Note 2: in the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
     =#
 
-    params_0  = [1e3; 0.90; zeros(lags-1)];
-    params_lb = [1e2; -1*ones(lags)];
-    params_ub = [1e4; +1*ones(lags)];
-
+    params_0  = [1e-4; 1e3; 0.90; zeros(lags-1)];
+    params_lb = [1e-6; 1e2; -1*ones(lags)];
+    params_ub = [1e-2; 1e4; +1*ones(lags)];
+    
     if is_llt
         pushfirst!(params_0,  1e-3);
         pushfirst!(params_lb, 1e-4);
@@ -241,13 +240,13 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     minimizer_bounded = res_optim.u;
 
     #=
-    # Alternative procedure
+    # Alternative way to handle the bounds in the optimisation
     tuple_fmin_args = (params_lb, params_ub, is_llt, sspace);
     params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
     prob = OptimizationFunction(call_reparametrised_fmin!);
     prob = OptimizationProblem(prob, params_0_unb, tuple_fmin_args);
     res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.0, reltol=1e-3);
-    minimizer_bounded_1 = [get_bounded_logit(res_optim.u[i], params_lb[i], params_ub[i]) for i in axes(res_optim.u, 1)];
+    minimizer_bounded = [get_bounded_logit(res_optim.u[i], params_lb[i], params_ub[i]) for i in axes(res_optim.u, 1)];
     =#
     
     # Update sspace accordingly
