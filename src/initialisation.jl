@@ -2,15 +2,27 @@
     update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
 Update `sspace.Q` from `params`.
+
+# Notes on the parameters
+
+When is_llt == false:
+- sigma_{drift}^2
+- sigma_{cycle}^2 / sigma_{drift}^2
+- AR(p) parameters
+
+When is_llt == true:
+- sigma_{drift}^2
+- sigma_{trend}^2 / sigma_{drift}^2
+- sigma_{cycle}^2 / sigma_{drift}^2
+- AR(p) parameters
+
+In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
 """
 function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    sspace.Q[1, 1] = params[1];
+    sspace.Q[2, 2] = params[1]*params[2];
     if is_llt
-        sspace.Q[1, 1] = params[1]*params[2];
-        sspace.Q[2, 2] = params[2];
-        sspace.Q[3, 3] = params[2]*params[3];
-    else
-        sspace.Q[1, 1] = params[1];
-        sspace.Q[2, 2] = params[1]*params[2];
+        sspace.Q[3, 3] = params[1]*params[3];
     end
 end
 
@@ -18,6 +30,21 @@ end
     update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
 
 Update `sspace.C` from `params`.
+
+# Notes on the parameters
+
+When is_llt == false:
+- sigma_{drift}^2
+- sigma_{cycle}^2 / sigma_{drift}^2
+- AR(p) parameters
+
+When is_llt == true:
+- sigma_{drift}^2
+- sigma_{trend}^2 / sigma_{drift}^2
+- sigma_{cycle}^2 / sigma_{drift}^2
+- AR(p) parameters
+
+In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
 """
 function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)    
     sspace.C[3, 3:end] = params[3+is_llt:end];
@@ -121,7 +148,7 @@ function call_reparametrised_fmin!(params::Vector{Float64}, tuple_args::Tuple)
     for i in axes(constrained_params, 1)
         constrained_params[i] = get_bounded_logit(params[i], params_lb[i], params_ub[i]);
     end
-    
+
     return call_fmin!(constrained_params, tuple_fmin_args);
 end
 
@@ -179,7 +206,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
 
     # Initial conditions (mean)
-    X0 = zeros(2+lags);
+    X0 = zeros(2+is_llt+lags);
 
     # Initial conditions (covariance)
     C_cycle = C[3:end, 3:end];
@@ -208,31 +235,33 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     Initial values / bounds for the parameters
 
     When is_llt == false:
+    - sigma_{drift}^2
     - sigma_{cycle}^2 / sigma_{drift}^2
     - AR(p) parameters
 
     When is_llt == true:
+    - sigma_{drift}^2
     - sigma_{trend}^2 / sigma_{drift}^2
-    - sigma_{cycle}^2 / sigma_{trend}^2
+    - sigma_{cycle}^2 / sigma_{drift}^2
     - AR(p) parameters
 
-    Note 1: sigma_{drift}^2 is fixed to 1e-4 during the initialisation
-    Note 2: in the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
+    In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
     =#
 
     params_0  = [1e-4; 1e3; 0.90; zeros(lags-1)];
     params_lb = [1e-6; 1e2; -1*ones(lags)];
     params_ub = [1e-2; 1e4; +1*ones(lags)];
     
+    # Add `sigma_{trend}^2 / sigma_{drift}^2` entries
     if is_llt
-        pushfirst!(params_0,  1e-3);
-        pushfirst!(params_lb, 1e-4);
-        pushfirst!(params_ub, 1e-2);
+        insert!(params_0,  2, 1e-3);
+        insert!(params_lb, 2, 1e-4);
+        insert!(params_ub, 2, 1e-2);
     end
-    
+        
     # Best derivative-free option from NLopt -> NLopt.LN_SBPLX()
 
-    # Maximum likelihood    
+    # Maximum likelihood
     tuple_fmin_args = (is_llt, sspace);
     prob = OptimizationFunction(call_fmin!);
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
@@ -253,7 +282,7 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     update_sspace_Q_from_params!(minimizer_bounded, is_llt, sspace);
     update_sspace_C_from_params!(minimizer_bounded, is_llt, sspace);
     update_sspace_DQD_and_P0_from_params!(sspace);
-
+    
     # Retrieve optimal states
     status = kfilter_full_sample(sspace);
     smoothed_states, _ = ksmoother(sspace, status);
