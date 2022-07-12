@@ -547,9 +547,10 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     coordinates_transition_stationary = coordinates_transition_current[coordinates_transition_current .> 2*estim.n_non_stationary];
     coordinates_transition_idio_cycles = coordinates_transition_stationary[1:end-estim.n_cycles];
     coordinates_transition_common_cycles = coordinates_transition_stationary[end-estim.n_cycles+1:end];
+    coordinates_transition_common_cycles_lagged = vcat([coordinates_transition_common_cycles .+ i for i=0:estim.lags-1]...);
 
     # coordinates_transition_lagged and *_PPs
-    coordinates_transition_lagged = sort(vcat(coordinates_transition_non_stationary, coordinates_transition_idio_cycles, [coordinates_transition_common_cycles .+ i for i=0:estim.lags-1]...));
+    coordinates_transition_lagged = sort(vcat(coordinates_transition_non_stationary, coordinates_transition_idio_cycles, coordinates_transition_common_cycles_lagged));
     coordinates_transition_PPs = coordinates_transition_lagged .+ 1;
 
     # `coordinates_transition_P0` identifies the entry in P0 that the cm-step should recompute
@@ -565,8 +566,10 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
           This is purely a shortcut to simplify the implementation (estim.Γ_extended can be also used for the loadings cm step) and
           it does not impact the zero constraints described above.
     =#
-
-    coordinates_measurement_states = copy(coordinates_transition_lagged);
+    
+    zeros_n = zeros(estim.n);
+    coordinates_measurement_non_stationary = findall([view(B_trends, :, i) != zeros_n for i in axes(B_trends, 2)]);
+    coordinates_measurement_states = sort(vcat(coordinates_measurement_non_stationary, coordinates_transition_idio_cycles, coordinates_transition_common_cycles_lagged)); # note that coordinates_transition_lagged[estim.n_trends:end] == coordinates_measurement_states[estim.n_trends:end]
     
     # Convenient views for using sspace.B in the expected logliklihood and cm steps calculations
     B_star = @view sspace.B[:, coordinates_measurement_states];
