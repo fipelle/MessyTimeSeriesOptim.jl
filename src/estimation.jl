@@ -311,7 +311,7 @@ function update_ecm_stats_measurement!(barrier_M::FloatMatrix, estim::EstimSetti
     mul!(smoother_arrays.M, smoother_arrays.buffer_M, Xs_view', 1.0, 1.0);
 
     # Update ECM statistics: compute and store N_t
-    smoother_arrays.N[t] = A_transpose*A_transpose';
+    smoother_arrays.N[t] = A_transpose*A_transpose'; # TBD: change the generation of N_{t} -> this is a diagonal matrix with ones at the entries corresponding to series with observed values at time t
 
     # Update ECM statistics: compute O_t
     mul!(smoother_arrays.buffer_O.data, Xs_view, Xs_view');
@@ -481,9 +481,11 @@ function cm_step_X0_P0!(sspace::KalmanSettings, status::SizedKalmanStatus, smoot
     # CM-step for sspace.P0
     mul!(status.online_status.buffer_J2, sspace.P0, Array(smoother_arrays.J2));         # Array(...) helps speeding up mul!(...) while keeping J2 symmetric (i.e., good trade-off wrt other options incl. ".data")
     mul!(status.online_status.buffer_m_m, status.online_status.buffer_J2, sspace.P0);
+    P0_raw = Symmetric(sspace.P0.data - status.online_status.buffer_m_m);
     for ij in coordinates_transition_P0
-        sspace.P0.data[ij] -= status.online_status.buffer_m_m[ij];
+        sspace.P0.data[ij] = P0_raw[ij]; # TBD: symmetry could be exploited in the indexing
     end
+    return P0_raw;
 end
 
 """
@@ -534,10 +536,10 @@ function ksmoother_ecm!(estim::EstimSettings, sspace::KalmanSettings, status::Si
     call_update_smoothing_factors!(sspace, status, smoother_arrays, nothing);
 
     # CM-step for X0 and P0
-    cm_step_X0_P0!(sspace, status, smoother_arrays, coordinates_transition_P0);
+    P0_raw = cm_step_X0_P0!(sspace, status, smoother_arrays, coordinates_transition_P0);
 
     # Finalise calculations of the ECM statistics for the transition equation
-    call_update_ecm_stats_transition!(estim, smoother_arrays, sspace.X0, sspace.P0, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs);
+    call_update_ecm_stats_transition!(estim, smoother_arrays, sspace.X0, P0_raw, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs);
 end
 
 #=
