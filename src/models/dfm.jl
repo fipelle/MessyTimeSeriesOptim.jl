@@ -135,7 +135,7 @@ function DFMSettings(Y::Union{FloatMatrix, JMatrix{Float64}}, lags::Int64, trend
     # Compute penalty data
     Γ = build_Γ(1, lags, λ, β);
     Γ_idio = build_Γ(1, 1, λ, β)[1];
-    Γ_extended = cat(dims=[1,2], Diagonal(zeros(n_non_stationary, n_non_stationary)), [Γ_idio for i=1:n]..., [Γ for i=1:n_cycles]...) |> Array |> Diagonal;
+    Γ_extended = cat(dims=[1,2], Diagonal(zeros(n_trends, n_trends)), [Γ_idio for i=1:n]..., [Γ for i=1:n_cycles]...) |> Array |> Diagonal;
 
     # Return DFMSettings
     return DFMSettings(Y, n, T, lags, n_trends, n_drifts, n_cycles, n_non_stationary, m, trends_skeleton, cycles_skeleton, drifts_selection, trends_free_params, cycles_free_params, λ, α, β, Γ, Γ_idio, Γ_extended, ε, tol, max_iter, prerun, check_quantile, verb);
@@ -705,10 +705,14 @@ function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{F
         # Coordinates
         i,j = ij.I;
 
-        # Compute new value for sspace.C[ij]
+        #=
+        Compute new value for sspace.C[ij]
+        - the formula for C_star is more general than the one reported in the reference paper - equivalent if Q is diagonal (as with the current DFM implementation)
+        =#
+
         C_star[ij] = soft_thresholding(turbo_dot(inv_Q[:,i], G[:,j] - C_star*H[:,j]) + inv_Q[i,i]*C_star[ij]*H[j,j], 0.5*estim.α*estim.Γ_extended[j, j]);
         C_star[ij] /= inv_Q[i,i]*H[j,j] + (1-estim.α)*estim.Γ_extended[j, j];
-
+        
         # Adjust autoregressive coefficient of the idiosyncratic cycles to enforce causality
         if position <= estim.n
             if abs(C_star[ij]) > 0.98
