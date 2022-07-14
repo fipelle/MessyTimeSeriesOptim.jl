@@ -248,17 +248,17 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
     =#
 
-    params_0  = [1e-4; 1e3; 0.90; zeros(lags-1)];
-    params_lb = [1e-6; 1e2; -1*ones(lags)];
-    params_ub = [1e-2; 1e4; +1*ones(lags)];
+    params_0  = [1e-2; 1e3; 0.90; zeros(lags-1)];
+    params_lb = [1e-3; 1e2; -1*ones(lags)];
+    params_ub = [1e-1; 1e4; +1*ones(lags)];
     
     # Add `sigma_{trend}^2 / sigma_{drift}^2` entries
     if is_llt
-        insert!(params_0,  2, 1e-3);
-        insert!(params_lb, 2, 1e-4);
-        insert!(params_ub, 2, 1e-2);
+        insert!(params_0,  2, 1e-2);
+        insert!(params_lb, 2, 1e-3);
+        insert!(params_ub, 2, 1e-1);
     end
-        
+    
     # Best derivative-free option from NLopt -> NLopt.LN_SBPLX()
 
     # Maximum likelihood
