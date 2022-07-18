@@ -135,7 +135,7 @@ function DFMSettings(Y::Union{FloatMatrix, JMatrix{Float64}}, lags::Int64, trend
     # Compute penalty data
     Γ = build_Γ(1, lags, λ, β);
     Γ_idio = build_Γ(1, 1, λ, β)[1];
-    Γ_extended = cat(dims=[1,2], Diagonal(zeros(n_non_stationary, n_non_stationary)), [Γ_idio for i=1:n]..., [Γ for i=1:n_cycles]...) |> Array |> Diagonal;
+    Γ_extended = cat(dims=[1,2], Diagonal(zeros(n_trends, n_trends)), [Γ_idio for i=1:n]..., [Γ for i=1:n_cycles]...) |> Array |> Diagonal;
 
     # Return DFMSettings
     return DFMSettings(Y, n, T, lags, n_trends, n_drifts, n_cycles, n_non_stationary, m, trends_skeleton, cycles_skeleton, drifts_selection, trends_free_params, cycles_free_params, λ, α, β, Γ, Γ_idio, Γ_extended, ε, tol, max_iter, prerun, check_quantile, verb);
@@ -170,6 +170,16 @@ function check_model_bounds(estim::DFMSettings)
         if size(estim.trends_skeleton, 2) != size(estim.trends_free_params, 2)
             throw(DomainError);
         end
+
+        if sum(estim.trends_free_params .!= 0.0) != 0
+            error("The estimation of the trends' measurement coefficients is not supported yet!"); # TBD: it may be easier to implement by using the direct Kitagawa representation with 3 states rather than 4
+        end
+
+        for row in eachrow(estim.trends_skeleton)
+            if length(findall(row .!= 0.0)) > 1
+                error("Linear combinations of different trends are not supported yet!"); # TBD: implement it!
+            end
+        end
     end
 
     if eltype(estim.cycles_skeleton) <: FloatMatrix
@@ -202,10 +212,10 @@ function initialise_trends(estim::DFMSettings, common_trends::Union{FloatMatrix,
 
     # TBD: Check with one trend only!!!!!
     
-    # Estimate drift where necessary
-    drift_trends = mean_skipmissing(diff(common_trends, dims=2))[:];
-    variance_trends = std_skipmissing(diff(common_trends, dims=2))[:].^2;
-
+    # Guesses for the variances
+    variance_rw_trends = std_skipmissing(diff(common_trends, dims=2))[:].^2;
+    variance_i2_trends = std_skipmissing(@views common_trends[:, 3:end]-2*common_trends[:, 2:end-1]+common_trends[:, 1:end-2])[:].^2;
+    
     #=
     Memory pre-allocation for the state-space parameters linked to the non-stationary components
     Note: similarly to Watson and Engle (1983), estim.n_non_stationary lags of the main non-stationary components are added to compute PPs in the ECM algorithm
@@ -213,10 +223,10 @@ function initialise_trends(estim::DFMSettings, common_trends::Union{FloatMatrix,
 
     B_trends = zeros(estim.n, 2*estim.n_non_stationary);
     C_trends = zeros(2*estim.n_non_stationary, 2*estim.n_non_stationary);
-    D_trends = zeros(2*estim.n_non_stationary, estim.n_non_stationary);
-    Q_trends = zeros(estim.n_non_stationary, estim.n_non_stationary);
+    D_trends = zeros(2*estim.n_non_stationary, estim.n_trends);
+    Q_trends = zeros(estim.n_trends, estim.n_trends);
     X0_trends = zeros(2*estim.n_non_stationary);
-    P0_trends = zeros(2*estim.n_non_stationary, 2*estim.n_non_stationary);
+    P0_trends = Matrix(Inf*I, 2*estim.n_non_stationary, 2*estim.n_non_stationary); # initialisation for P0_trends finalised in initialise(...) to form a stabler P0
 
     # Initialise counter
     i = 0;
@@ -225,25 +235,19 @@ function initialise_trends(estim::DFMSettings, common_trends::Union{FloatMatrix,
     for j=1:estim.n_trends
 
         B_trends[:, 1+i] = estim.trends_skeleton[:,j];
-        n_previous_drifts = ifelse(j>1, sum(estim.drifts_selection[1:j-1]), 0)::Int64;
 
-        # Trends with drift
+        # Smooth I(2) trend
         if estim.drifts_selection[j]
             C_trends[1+i:4+i, 1+i:4+i] = [1 0 1 0; 1 0 0 0; 0 0 1 0; 0 0 1 0];
-            D_trends[1+i, j+n_previous_drifts] = 1;
-            D_trends[3+i, j+1+n_previous_drifts] = 1;
-            Q_trends[j+n_previous_drifts, j+n_previous_drifts] = variance_trends[j];
-            Q_trends[j+1+n_previous_drifts, j+1+n_previous_drifts] = estim.ε;
-            X0_trends[3+i] = drift_trends[j];
-            P0_trends[1+i:4+i, 1+i:4+i] = (1/estim.ε)*Matrix(I,4,4);
+            D_trends[3+i, j] = 1;
+            Q_trends[j, j] = variance_i2_trends[j];
             i += 4;
         
-        # Driftless trends
+        # Driftless random walk trend
         else
             C_trends[1+i:2+i, 1+i:2+i] = [1 0; 1 0];
-            D_trends[1+i, j+n_previous_drifts] = 1;
-            Q_trends[j+n_previous_drifts, j+n_previous_drifts] = variance_trends[j];
-            P0_trends[1+i:2+i, 1+i:2+i] = (1/estim.ε)*Matrix(I,2,2);
+            D_trends[1+i, j] = 1;
+            Q_trends[j, j] = variance_rw_trends[j];
             i += 2;
         end
     end
@@ -288,10 +292,10 @@ function initialise_common_cycle(estim::DFMSettings, residual_data::FloatMatrix,
 
     if estim.lags > 1
 
-        # Initialise ridge loadings associated to the factor and its lags
-        complete_loadings = zeros(length(loadings), estim.lags);
-        complete_loadings[1,1] = 1.0;
-
+        #=
+        Data to initialise dynamic loadings
+        =#
+        
         # Regular VAR configuration
         B = [1.0 zeros(1, estim.lags-1)];
         R = Symmetric(estim.ε * ones(1,1));
@@ -307,9 +311,24 @@ function initialise_common_cycle(estim::DFMSettings, residual_data::FloatMatrix,
         # Backcast factor up to t=-estim.lags
         pc1_extended = mapreduce(Xt -> sspace.B*Xt, hcat, smoothed_states);
         pc1_extended_x = vcat([pc1_extended[:, estim.lags-j:end-j] for j=0:estim.lags-1]...);
+        pc1_extended_x_current = permutedims(pc1_extended_x[1, :]);
+        pc1_extended_x_lags = pc1_extended_x[2:end, :];
+        if estim.lags == 2
+            pc1_extended_x_lags = permutedims(pc1_extended_x_lags);
+        end
 
-        # Compute ridge loadings associated to the factor and its lags
-        complete_loadings[2:end,:] = @views data_current_block[2:end,:]*pc1_extended_x'/Symmetric(pc1_extended_x*pc1_extended_x' + estim.Γ);
+        #=
+        Initialise dynamic loadings
+        =#
+
+        # Update `data_current_block` to account for the part explained by `pc1`
+        data_current_block -= loadings*pc1_extended_x_current;
+
+        # Compute complete loadings
+        complete_loadings = zeros(length(loadings), estim.lags);
+        complete_loadings[:, 1] = loadings;
+        complete_loadings[2:end, 2:end] = data_current_block[2:end, :]*pc1_extended_x_lags'/Symmetric(pc1_extended_x_lags*pc1_extended_x_lags');
+        # TBD: Improve previous line to include a ridge penalty, if possible
 
         # Explained data
         explained_data = complete_loadings*pc1_extended_x;
@@ -388,8 +407,17 @@ function initialise_cycles(estim::DFMSettings, data::FloatMatrix)
     # Initialise idiosyncratic cycles as white noises
     for i=1:estim.n
         
+        # Estimate ridge autoregressive coefficients
+        idio_y, idio_x = lag(permutedims(residual_data[i, :]), 1);
+        #=
+        # Remove comment to initialise as AR(1)
+        idio_coeff = idio_y*idio_x'/Symmetric(idio_x*idio_x' .+ estim.Γ[1,1]);
+        MessyTimeSeriesOptim.enforce_causality_and_invertibility!(idio_coeff);
+        =#
+        idio_coeff = zeros(1,1);
+
         # Estimate var-cov matrix of the residuals
-        idio_resid = permutedims(diff(residual_data[i,:]));
+        idio_resid = idio_y - idio_coeff*idio_x;
         idio_resid_var = (idio_resid*idio_resid')/length(idio_resid);
 
         #=
@@ -401,7 +429,7 @@ function initialise_cycles(estim::DFMSettings, data::FloatMatrix)
         coordinates_idio = 1+(i-1)*2; # place the idiosyncratic components before the common ones as in the reference paper
 
         # Convenient short cut for `C_cycles` and `P0_cycles`
-        current_companion = companion_form(zeros(1,1), extended=true);
+        current_companion = companion_form(idio_coeff, extended=true);
         current_cov_companion = Symmetric(cat(dims=[1,2], idio_resid_var[1], zeros(1,1)));
 
         # Update coefficients
@@ -458,33 +486,51 @@ end
 
 function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
 
+    # Trim sample removing initial and ending missings (when needed)
+    first_ind = findfirst(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
+    last_ind = findlast(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
+    Y_trimmed = estim.Y[:, first_ind:last_ind] |> JMatrix{Float64};
+    T_trimmed = size(Y_trimmed, 2);
+
     # Compute individual trends
-    sqrt_T = floor(sqrt(estim.T)) |> Int64;
-    trends = centred_moving_average(forward_backwards_rw_interpolation(estim.Y, estim.n, estim.T), estim.n, estim.T, 2*sqrt_T+1);
-
-    # Removing trailing and leading missings
-    first_ind = findfirst(sum(ismissing.(trends), dims=1) .< estim.n)[2];
-    last_ind = findlast(sum(ismissing.(trends), dims=1) .< estim.n)[2];
-    trends = trends[:, first_ind:last_ind] |> FloatMatrix;
-
-    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
-    common_trends = ones(estim.n_trends, estim.T-2*sqrt_T);
-    for i=1:estim.n_trends
-        coordinates_current_block = findall(estim.trends_skeleton[:, i] .!= 0);
-        common_trends[i,:] = median(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
+    trends = zeros(estim.n, T_trimmed);
+    cycles = zeros(estim.n, T_trimmed);
+    for i=1:estim.n
+        @info("Initialisation > Newton's method, variable $(i)");
+        drifts_selection_id = findfirst(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
+        trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
     end
 
-    # Interpolate detrended data
-    detrended_data = interpolate_series(estim.Y[:, first_ind:last_ind] - estim.trends_skeleton*common_trends, estim.n, estim.T-2*sqrt_T);
+    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
+    common_trends = zeros(estim.n_trends, T_trimmed);
+    for i=1:estim.n_trends
+        coordinates_current_block = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
+        common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
+    end
 
+    # Compute detrended data
+    detrended_data = trends+cycles; # interpolated observables
+    detrended_data .-= estim.trends_skeleton*common_trends;
+    
     # Build state-space parameters
     B_trends, C_trends, D_trends, Q_trends, X0_trends, P0_trends = initialise_trends(estim, common_trends);
     B_cycles, C_cycles, D_cycles, Q_cycles, X0_cycles, P0_cycles = initialise_cycles(estim, detrended_data);
     B = hcat(B_trends, B_cycles);
-    R = Symmetric(Matrix(estim.ε * I, estim.n, estim.n));
+    R = estim.ε * I;
     C = cat(dims=[1,2], C_trends, C_cycles);
     D = cat(dims=[1,2], D_trends, D_cycles);
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
+    
+    # Reference points to compute the order of magnitude
+    max_abs_data = maximum(skipmissing(abs.(estim.Y)));
+    max_abs_P0_cycles = maximum(abs.(P0_cycles));
+    max_abs_data_P0_cycles = max(max_abs_data, max_abs_P0_cycles);
+    
+    # Reference order of magnitude
+    reference_oom = floor(Int, log10(max_abs_data_P0_cycles));
+
+    # Finalise initialisation of P0_trends
+    P0_trends[isinf.(P0_trends)] .= 10.0^(reference_oom+3);
 
     # Initial conditions
     X0 = vcat(X0_trends, X0_cycles);
@@ -494,56 +540,60 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     sspace = KalmanSettings(estim.Y, B, R, C, D, Q, X0, P0, compute_loglik=false);
 
     # `coordinates_transition_current` identifies the states for which there is an associated variance that is allowed to differ from zero.
-    coordinates_transition_current = findall(sum(D, dims=2)[:] .== 1);
+    coordinates_transition_current = findall(sum(D, dims=2)[:] .== 1); # clearly, this and the following coordinates do not have the ids for the level of the trends, since dfm.jl uses Kitagawa's smooth parametrisation
 
-    # Coordinates per type
+    # Coordinates per type (i.e., `coordinates_transition_current` breakdown)
     coordinates_transition_non_stationary = coordinates_transition_current[coordinates_transition_current .<= 2*estim.n_non_stationary];
     coordinates_transition_stationary = coordinates_transition_current[coordinates_transition_current .> 2*estim.n_non_stationary];
     coordinates_transition_idio_cycles = coordinates_transition_stationary[1:end-estim.n_cycles];
     coordinates_transition_common_cycles = coordinates_transition_stationary[end-estim.n_cycles+1:end];
+    coordinates_transition_common_cycles_lagged = vcat([coordinates_transition_common_cycles .+ i for i=0:estim.lags-1]...);
 
     # coordinates_transition_lagged and *_PPs
-    coordinates_transition_lagged = sort(vcat(coordinates_transition_non_stationary, coordinates_transition_idio_cycles, [coordinates_transition_common_cycles .+ i for i=0:estim.lags-1]...));
+    coordinates_transition_lagged = sort(vcat(coordinates_transition_non_stationary, coordinates_transition_idio_cycles, coordinates_transition_common_cycles_lagged));
     coordinates_transition_PPs = coordinates_transition_lagged .+ 1;
 
     # `coordinates_transition_P0` identifies the entry in P0 that the cm-step should recompute
     coordinates_transition_P0 = findall(P0[:] .!= 0.0);
 
     # Comment this out if you want to keep the original diffuse initialisation for the non-stationary components
-    # filter!(coordinate->coordinate.I[1] > size(P0_trends,1), coordinates_transition_P0);
+    #coordinates_transition_P0 = findall((P0[:] .!= 0.0) .& (P0[:] .!= P0[1,1]));
 
     #=
     `coordinates_measurement_states` identifies the states for which the associated loadings are allowed to differ from zero.
     Note: the most compact version for this representation would be setdiff(coordinates_transition_lagged, coordinates_transition_drifts).
           However, this implementation of the DFM also includes the columns for the drifts, which always have zero loadings.
-          The main advantage of this choice is that estim.Γ_extended can be also used for the loadings cm step.
+          This is purely a shortcut to simplify the implementation (estim.Γ_extended can be also used for the loadings cm step) and
+          it does not impact the zero constraints described above.
     =#
-
-    coordinates_measurement_states = copy(coordinates_transition_lagged);
-
+    
+    zeros_n = zeros(estim.n);
+    coordinates_measurement_non_stationary = findall([view(B_trends, :, i) != zeros_n for i in axes(B_trends, 2)]);
+    coordinates_measurement_states = sort(vcat(coordinates_measurement_non_stationary, coordinates_transition_idio_cycles, coordinates_transition_common_cycles_lagged)); # note that coordinates_transition_lagged[estim.n_trends:end] == coordinates_measurement_states[estim.n_trends:end]
+    
     # Convenient views for using sspace.B in the expected logliklihood and cm steps calculations
     B_star = @view sspace.B[:, coordinates_measurement_states];
 
     # Coordinates free parameters (B)
     cartesian_B = CartesianIndices(B_star);
-    free_params_B_trends = hcat([ifelse(estim.drifts_selection[i], hcat(estim.trends_free_params[:,i], ones(estim.n).==0), estim.trends_free_params[:,i]) for i=1:estim.n_trends]...);
+    free_params_B_trends = zeros(estim.n, estim.n_trends) .== 1; # TBD: this is a bit tricky to relax since the coordinates in `coordinates_measurement_states` refer to the drifts for the I(2) trends - the direct Kitagawa representation for the smooth trend may help implementing it
     free_params_B_idio_cycles = zeros(estim.n, estim.n) .== 1;
-    free_params_B_common_cycles = hcat(permutedims([estim.cycles_free_params[:,i] for i=1:estim.n_cycles, j=1:estim.lags])...);
+    free_params_B_common_cycles = hcat(permutedims([estim.cycles_free_params[:, i] for i=1:estim.n_cycles, j=1:estim.lags])...);
     coordinates_free_params_B = cartesian_B[hcat(free_params_B_trends, free_params_B_idio_cycles, free_params_B_common_cycles)];
-
+    
     # Convenient views for using sspace.C in the expected logliklihood and cm steps calculations
     C_star = @view sspace.C[coordinates_transition_current, coordinates_transition_lagged];
 
     # Coordinates free parameters (C)
     cartesian_C = CartesianIndices(C_star);
-    free_params_C_trends = zeros(estim.n_non_stationary, estim.n_non_stationary) .== 1;
+    free_params_C_trends = zeros(estim.n_trends, estim.n_trends) .== 1;
     free_params_C_idio_cycles = Matrix(I, estim.n, estim.n);
     free_params_C_common_cycles = cat(dims=[1,2], [ones(1, estim.lags) for i=1:estim.n_cycles]...) .== 1;
     coordinates_free_params_C = cartesian_C[cat(dims=[1,2], free_params_C_trends, free_params_C_idio_cycles, free_params_C_common_cycles)];
-
+    
     # View on Q from DQD
     Q_view = @view sspace.DQD.data[coordinates_transition_current, coordinates_transition_current];
-
+    
     # Return output
     return sspace, B_star, C_star, Q_view, coordinates_measurement_states, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs, coordinates_transition_P0, coordinates_free_params_B, coordinates_free_params_C;
 end
@@ -648,17 +698,21 @@ function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{F
     # Counter for common cycles and base coordinates
     n_previous_common_cycles = 0;
     base_coordinates_cycle = collect(1:estim.lags);
-
+    
     # Loop over the free parameters
     for (position, ij) in enumerate(coordinates_free_params_C)
 
         # Coordinates
         i,j = ij.I;
 
-        # Compute new value for sspace.C[ij]
+        #=
+        Compute new value for sspace.C[ij]
+        - the formula for C_star is more general than the one reported in the reference paper - equivalent if Q is diagonal (as with the current DFM implementation)
+        =#
+
         C_star[ij] = soft_thresholding(turbo_dot(inv_Q[:,i], G[:,j] - C_star*H[:,j]) + inv_Q[i,i]*C_star[ij]*H[j,j], 0.5*estim.α*estim.Γ_extended[j, j]);
         C_star[ij] /= inv_Q[i,i]*H[j,j] + (1-estim.α)*estim.Γ_extended[j, j];
-
+        
         # Adjust autoregressive coefficient of the idiosyncratic cycles to enforce causality
         if position <= estim.n
             if abs(C_star[ij]) > 0.98
@@ -683,10 +737,14 @@ function cm_step!(estim::DFMSettings, sspace::KalmanSettings, B_star::SubArray{F
         end
     end
 
-    # CM-step for Q
-    Q_cm_step = (F-G*C_star'-C_star*G'+C_star*H*C_star')/estim.T; # this matrix product could be improved, since it also considers the off-diagonal elements (which are not used in this cm-step)
-    for i=1:estim.n_non_stationary + estim.n + estim.n_cycles 
-        Q_view[i,i] = Q_cm_step[i,i];
+    #=
+    CM-step for Q
+    - previously implemented with `Q_cm_step = Diagonal(F-G*C_star'-C_star*G'+C_star*H*C_star')/estim.T`;
+    =#
+    
+    for i=1:estim.n_trends + estim.n + estim.n_cycles
+        Q_view[i, i] = @views F[i, i] + (H*C_star[i, :] - 2*G[i, :])'*C_star[i, :];
+        Q_view[i, i] /= estim.T;
     end
 end
 
