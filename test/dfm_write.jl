@@ -1,167 +1,4 @@
-"""
-    estimation_input_test(estim::DFMSettings, benchmark_data::Tuple; is_stationary::Bool=false)
-
-Check whether the settings in `estim` are equal to those in `benchmark_data`. If `is_stationary` is true skip the trend-related variables.
-
-    estimation_input_test(estim_a::DFMSettings, estim_b::DFMSettings)
-
-Check whether the settings in `estim_a` are equal to those in `estim_b`.
-"""
-function estimation_input_test(estim::DFMSettings, benchmark_data::Tuple; is_stationary::Bool=false)
-
-    benchmark_Y, benchmark_n, benchmark_T, benchmark_lags, benchmark_n_trends, benchmark_n_drifts, benchmark_n_cycles,
-        benchmark_n_non_stationary, benchmark_m, benchmark_trends_skeleton, benchmark_cycles_skeleton, benchmark_drifts_selection,
-            benchmark_trends_free_params, benchmark_cycles_free_params, benchmark_λ, benchmark_α, benchmark_β, benchmark_Γ, 
-                benchmark_Γ_idio, benchmark_Γ_extended_stationary, benchmark_Γ_extended_non_stationary, benchmark_ε, benchmark_tol, benchmark_max_iter, benchmark_prerun, benchmark_verb = benchmark_data;
-    
-    if is_stationary
-        benchmark_n_trends = 0;
-        benchmark_n_drifts = 0;
-        benchmark_n_non_stationary = 0;
-        benchmark_m = benchmark_n_cycles*benchmark_lags + benchmark_n;
-        benchmark_trends_skeleton = nothing;
-        benchmark_drifts_selection = nothing;
-        benchmark_trends_free_params = nothing;
-        benchmark_Γ_extended = benchmark_Γ_extended_stationary;
-    else
-        benchmark_Γ_extended = benchmark_Γ_extended_non_stationary;
-    end
-
-    return ~(false in [estim.Y === benchmark_Y;
-                      estim.n == benchmark_n;
-                      estim.T == benchmark_T;
-                      estim.lags == benchmark_lags;
-                      estim.n_trends == benchmark_n_trends;
-                      estim.n_drifts == benchmark_n_drifts;
-                      estim.n_cycles == benchmark_n_cycles;
-                      estim.n_non_stationary == benchmark_n_non_stationary;
-                      estim.m == benchmark_m;
-                      estim.trends_skeleton == benchmark_trends_skeleton;
-                      estim.cycles_skeleton == benchmark_cycles_skeleton;
-                      estim.drifts_selection == benchmark_drifts_selection;
-                      estim.trends_free_params == benchmark_trends_free_params;
-                      estim.cycles_free_params == benchmark_cycles_free_params;
-                      estim.λ == benchmark_λ;
-                      estim.α == benchmark_α;
-                      estim.β == benchmark_β;
-                      estim.Γ == benchmark_Γ;
-                      estim.Γ_idio == benchmark_Γ_idio;
-                      estim.Γ_extended == benchmark_Γ_extended;
-                      estim.ε == benchmark_ε;
-                      estim.tol == benchmark_tol;
-                      estim.max_iter == benchmark_max_iter;
-                      estim.prerun == benchmark_prerun;
-                      estim.verb == benchmark_verb]);
-end
-
-function estimation_input_test(estim_a::DFMSettings, estim_b::DFMSettings)
-
-    return ~(false in [estim_a.Y === estim_b.Y;
-                      estim_a.n == estim_b.n;
-                      estim_a.T == estim_b.T;
-                      estim_a.lags == estim_b.lags;
-                      estim_a.n_trends == estim_b.n_trends;
-                      estim_a.n_drifts == estim_b.n_drifts;
-                      estim_a.n_cycles == estim_b.n_cycles;
-                      estim_a.n_non_stationary == estim_b.n_non_stationary;
-                      estim_a.m == estim_b.m;
-                      estim_a.trends_skeleton == estim_b.trends_skeleton;
-                      estim_a.cycles_skeleton == estim_b.cycles_skeleton;
-                      estim_a.drifts_selection == estim_b.drifts_selection;
-                      estim_a.trends_free_params == estim_b.trends_free_params;
-                      estim_a.cycles_free_params == estim_b.cycles_free_params;
-                      estim_a.λ == estim_b.λ;
-                      estim_a.α == estim_b.α;
-                      estim_a.β == estim_b.β;
-                      estim_a.Γ == estim_b.Γ;
-                      estim_a.Γ_idio == estim_b.Γ_idio;
-                      estim_a.Γ_extended == estim_b.Γ_extended;
-                      estim_a.ε == estim_b.ε;
-                      estim_a.tol == estim_b.tol;
-                      estim_a.max_iter == estim_b.max_iter;
-                      estim_a.prerun == estim_b.prerun;
-                      estim_a.verb == estim_b.verb]);
-end
-
-"""
-    dfm_estimation_test(Y::JArray, lags::Int64, λ::Number, α::Number, β::Number, benchmark_data::Tuple)
-
-Run basic tests on DFMSettings.
-"""
-function dfm_estimation_test(Y::JArray, lags::Int64, λ::Number, α::Number, β::Number, benchmark_data::Tuple)
-
-    _, _, _, _, _, _, benchmark_n_cycles, _, _, benchmark_trends_skeleton, benchmark_cycles_skeleton, benchmark_drifts_selection,
-        benchmark_trends_free_params, benchmark_cycles_free_params, _, _, _, _, _, _, _, _, _, _, _, _ = benchmark_data;
-
-    constructor_settings = ((Y, lags, benchmark_n_cycles, λ, α, β), 
-                            (Y, lags, benchmark_cycles_skeleton, benchmark_cycles_free_params, λ, α, β),
-                            (Y, lags, benchmark_trends_skeleton, benchmark_cycles_skeleton, benchmark_drifts_selection, benchmark_trends_free_params, benchmark_cycles_free_params, λ, α, β));
-
-    for (i, current_constructor_settings) in enumerate(constructor_settings)
-
-        # Default settings
-
-        estim_1 = DFMSettings(current_constructor_settings...);
-        estim_2 = DFMSettings(current_constructor_settings..., ε=1e-4);
-        estim_3 = DFMSettings(current_constructor_settings..., ε=1e-4, tol=1e-4);
-        estim_4 = DFMSettings(current_constructor_settings..., ε=1e-4, tol=1e-4, max_iter=1000);
-        estim_5 = DFMSettings(current_constructor_settings..., ε=1e-4, tol=1e-4, max_iter=1000, prerun=2);
-        estim_6 = DFMSettings(current_constructor_settings..., ε=1e-4, tol=1e-4, max_iter=1000, prerun=2, verb=true);
-
-        @test estimation_input_test(estim_1, benchmark_data, is_stationary=i<3);
-        @test estimation_input_test(estim_1, estim_2);
-        @test estimation_input_test(estim_1, estim_3);
-        @test estimation_input_test(estim_1, estim_4);
-        @test estimation_input_test(estim_1, estim_5);
-        @test estimation_input_test(estim_1, estim_6);
-
-        # Default settings (excl. ε)
-
-        estim_7 = DFMSettings(current_constructor_settings..., ε=1e-8);
-        estim_8 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-4);
-        estim_9 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-4, max_iter=1000);
-        estim_10 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-4, max_iter=1000, prerun=2);
-        estim_11 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-4, max_iter=1000, prerun=2, verb=true);
-
-        @test estimation_input_test(estim_7, estim_8);
-        @test estimation_input_test(estim_7, estim_9);
-        @test estimation_input_test(estim_7, estim_10);
-        @test estimation_input_test(estim_7, estim_11);
-
-        # Default settings (excl. ε, tol)
-
-        estim_12 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16);
-        estim_13 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=1000);
-        estim_14 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=1000, prerun=2);
-        estim_15 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=1000, prerun=2, verb=true);
-
-        @test estimation_input_test(estim_12, estim_13);
-        @test estimation_input_test(estim_12, estim_14);
-        @test estimation_input_test(estim_12, estim_15);
-
-        # Default settings (excl. ε, tol, max_iter)
-
-        estim_16 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=10000);
-        estim_17 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=10000, prerun=2);
-        estim_18 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=10000, prerun=2, verb=true);
-
-        @test estimation_input_test(estim_16, estim_17);
-        @test estimation_input_test(estim_16, estim_18);
-
-        # Default settings (excl. ε, tol, max_iter, prerun)
-
-        estim_19 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=10000, prerun=3);
-        estim_20 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=10000, prerun=3, verb=true);
-
-        @test estimation_input_test(estim_19, estim_20);
-
-        # Default settings (excl. ε, tol, max_iter, prerun, verb)
-        
-        estim_21 = DFMSettings(current_constructor_settings..., ε=1e-8, tol=1e-16, max_iter=10000, prerun=3, verb=false);
-        
-        @test estim_21.verb == false;
-    end
-end
+include("./tools.jl");
 
 """
     naive_dfm_simulation(true_loadings::FloatMatrix, true_dynamics::FloatMatrix, true_idio_dynamics::FloatVector, n::Int64, n_cycles::Int64, T::Int64, lags::Int64, λ::Number, α::Number, β::Number; no_sim::Int64=500)
@@ -243,6 +80,12 @@ function naive_dfm_simulation(true_loadings::FloatMatrix, true_dynamics::FloatMa
     return mase_common_cycles, mase_total_cycles;
 end
 
+function write_test_input(path, content)
+    open("$path.txt", "a") do io
+        println(io, content)
+    end
+end
+
 """
     dfm_simulation_tests(file_name::String, λ::Number, α::Number, β::Number)
 
@@ -297,24 +140,14 @@ function dfm_simulation_tests(file_name::String, λ::Number, α::Number, β::Num
     _, messy_with_idio = naive_dfm_simulation(loadings_messy, dynamics_sparse, idio_vect, n, 1, T, lags, λ, α, β, no_sim=10);
 
     # Load benchmark data
-    benchmark_baseline = read_test_input("./input/dfm/$(file_name)_baseline");
-    benchmark_baseline_with_idio = read_test_input("./input/dfm/$(file_name)_baseline_with_idio");
-    benchmark_sparse_dynamics = read_test_input("./input/dfm/$(file_name)_sparse_dynamics");
-    benchmark_sparse_dynamics_with_idio = read_test_input("./input/dfm/$(file_name)_sparse_dynamics_with_idio");
-    benchmark_full_sparse = read_test_input("./input/dfm/$(file_name)_full_sparse");
-    benchmark_full_sparse_with_idio = read_test_input("./input/dfm/$(file_name)_full_sparse_with_idio");
-    benchmark_messy = read_test_input("./input/dfm/$(file_name)_full_sparse_and_messy");
-    benchmark_messy_with_idio = read_test_input("./input/dfm/$(file_name)_full_sparse_and_messy_with_idio");
-
-    # Run tests
-    @test norm(baseline-benchmark_baseline, Inf) <= 1e-8;
-    @test norm(baseline_with_idio-benchmark_baseline_with_idio, Inf) <= 1e-8;
-    @test norm(sparse_dynamics-benchmark_sparse_dynamics, Inf) <= 1e-8;
-    @test norm(sparse_dynamics_with_idio-benchmark_sparse_dynamics_with_idio, Inf) <= 1e-8;
-    @test norm(full_sparse-benchmark_full_sparse, Inf) <= 1e-8;
-    @test norm(full_sparse_with_idio-benchmark_full_sparse_with_idio, Inf) <= 1e-8;
-    @test norm(messy-benchmark_messy, Inf) <= 1e-8;
-    @test norm(messy_with_idio-benchmark_messy_with_idio, Inf) <= 1e-8;
+    write_test_input("./input/dfm/$(file_name)_baseline", baseline);
+    write_test_input("./input/dfm/$(file_name)_baseline_with_idio", baseline_with_idio);
+    write_test_input("./input/dfm/$(file_name)_sparse_dynamics", sparse_dynamics);
+    write_test_input("./input/dfm/$(file_name)_sparse_dynamics_with_idio", sparse_dynamics_with_idio);
+    write_test_input("./input/dfm/$(file_name)_full_sparse", full_sparse);
+    write_test_input("./input/dfm/$(file_name)_full_sparse_with_idio", full_sparse_with_idio);
+    write_test_input("./input/dfm/$(file_name)_full_sparse_and_messy", messy);
+    write_test_input("./input/dfm/$(file_name)_full_sparse_and_messy_with_idio", messy_with_idio);
 end
 
 @testset "DFM basic functionalities" begin

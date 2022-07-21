@@ -344,7 +344,7 @@ end
     Γ = build_Γ(1, lags, λ, β);
     Γ_idio = build_Γ(1, 1, λ, β)[1];
     Γ_extended_stationary = cat(dims=[1,2], [Γ_idio for i=1:n]..., Γ) |> Array |> Diagonal;
-    Γ_extended_non_stationary = cat(dims=[1,2], Diagonal(zeros(2*n, 2*n)), [Γ_idio for i=1:n]..., Γ) |> Array |> Diagonal;
+    Γ_extended_non_stationary = cat(dims=[1,2], Diagonal(zeros(n, n)), [Γ_idio for i=1:n]..., Γ) |> Array |> Diagonal;
 
     # Setup benchmark data
     benchmark_data = (Y, n, T, lags, 2, 2, 1, 4, 2*n+n+lags, trends_skeleton, cycles_skeleton, drifts_selection, trends_free_params, cycles_free_params, λ, α, β, Γ, Γ_idio, Γ_extended_stationary, Γ_extended_non_stationary, ε, tol, max_iter, prerun, verb);
