@@ -496,11 +496,11 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     trends = zeros(estim.n, T_trimmed);
     cycles = zeros(estim.n, T_trimmed);
     for i=1:estim.n
-        @info("Initialisation > NLopt.LN_SBPLX, variable $(i)");
+        verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
         drifts_selection_id = findfirst(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
         trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
     end
-
+    
     # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
     common_trends = zeros(estim.n_trends, T_trimmed);
     for i=1:estim.n_trends
