@@ -82,7 +82,7 @@ end
 
 function write_test_input(path, content)
     open("$path.txt", "a") do io
-        println(io, content)
+        print(io, content)
     end
 end
 
