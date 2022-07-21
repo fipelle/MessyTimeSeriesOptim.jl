@@ -150,50 +150,10 @@ function dfm_simulation_tests(file_name::String, λ::Number, α::Number, β::Num
     write_test_input("./input/dfm/$(file_name)_full_sparse_and_messy_with_idio", messy_with_idio);
 end
 
-@testset "DFM basic functionalities" begin
+dfm_simulation_tests("mle", 0.0, 0.0, 1.0);
 
-    # Initialise data and benchmark data
-    Y = [0.72 missing 1.86 missing missing 2.52 2.98 3.81 missing 4.36;
-         0.95 0.70 missing missing missing missing 2.84 3.88 3.84 4.63];
+models_triplets = Dict("ridge" => (10.0, 0.0, 1.0), "lasso" => (10.0, 1.0, 1.0), "en" => (10.0, 0.5, 1.0));
 
-    lags = 2;
-    n = size(Y,1);
-    T = size(Y,2);
-    λ = 0.0;
-    α = 0.5;
-    β = 1.0;
-    ε = 1e-4;
-    tol = 1e-4;
-    max_iter = 1000;
-    prerun = 2;
-    verb = true;
-
-    # Advanced benchmark components
-    trends_skeleton = Matrix(1.0I, n, n);
-    cycles_skeleton = hcat([1; 2*ones(n-1)]);
-    drifts_selection = ones(n) .== 1;
-    trends_free_params = trends_skeleton .== 2;
-    cycles_free_params = cycles_skeleton .> 1;
-    Γ = build_Γ(1, lags, λ, β);
-    Γ_idio = build_Γ(1, 1, λ, β)[1];
-    Γ_extended_stationary = cat(dims=[1,2], [Γ_idio for i=1:n]..., Γ) |> Array |> Diagonal;
-    Γ_extended_non_stationary = cat(dims=[1,2], Diagonal(zeros(2*n, 2*n)), [Γ_idio for i=1:n]..., Γ) |> Array |> Diagonal;
-
-    # Setup benchmark data
-    benchmark_data = (Y, n, T, lags, 2, 2, 1, 4, 2*n+n+lags, trends_skeleton, cycles_skeleton, drifts_selection, trends_free_params, cycles_free_params, λ, α, β, Γ, Γ_idio, Γ_extended_stationary, Γ_extended_non_stationary, ε, tol, max_iter, prerun, verb);
-
-    # Run tests
-    dfm_estimation_test(Y, lags, λ, α, β, benchmark_data);
-end
-
-@testset "DFM simulations: MLE" begin
-    dfm_simulation_tests("mle", 0.0, 0.0, 1.0);
-end
-
-@testset "DFM simulations: penalised MLE" begin
-    models_triplets = Dict("ridge" => (10.0, 0.0, 1.0), "lasso" => (10.0, 1.0, 1.0), "en" => (10.0, 0.5, 1.0));
-    
-    for (key, value) in models_triplets
-        dfm_simulation_tests(key, value...);
-    end
+for (key, value) in models_triplets
+    dfm_simulation_tests(key, value...);
 end
