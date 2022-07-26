@@ -472,7 +472,7 @@ function initialise(estim::DFMSettings, trends_skeleton::Nothing)
     # Build state-space parameters
     B, C, D, Q, X0, P0 = initialise_cycles(estim, data);
     Q = Symmetric(Q);
-    R = Symmetric(Matrix(estim.ε * I, estim.n, estim.n));
+    R = estim.ε * I;
 
     # Generate sspace
     sspace = KalmanSettings(estim.Y, B, R, C, D, Q, X0, P0, compute_loglik=false);
