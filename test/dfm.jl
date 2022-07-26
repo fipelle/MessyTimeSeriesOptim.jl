@@ -223,7 +223,7 @@ function naive_dfm_simulation(true_loadings::FloatMatrix, true_dynamics::FloatMa
         sspace = ecm(estim);
 
         # Run Kalman filter
-        status = SizedKalmanStatus(sspace.Y.T);
+        status = SizedKalmanStatus(sspace);
         kfilter_full_sample!(sspace, status);
 
         X_sm, P_sm, X0_sm, P0_sm = ksmoother(sspace, status);

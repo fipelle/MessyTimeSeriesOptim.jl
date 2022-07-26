@@ -144,7 +144,7 @@ function var_estimation_test(Y::JArray, q::Int64, λ::Number, α::Number, β::Nu
     =#
 
     # Run Kalman filter
-    status = SizedKalmanStatus(sspace.Y.T);
+    status = SizedKalmanStatus(sspace);
     kfilter_full_sample!(sspace, status);
 
     # Compute Kalman stats from the ksmoother function

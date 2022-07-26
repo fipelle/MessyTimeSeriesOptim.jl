@@ -430,7 +430,7 @@ Kalman smoother and CM-step for initial conditions (i.e., X0 and P0)
 
 APIs to call `MessyTimeSeries.update_smoothing_factors!` with SmootherArrays.
 """
-call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}, e::Union{FloatVector, Nothing}, inv_F::Union{SymMatrix, Nothing}, L::Union{FloatMatrix, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2, e, inv_F, L);
+call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}, e::Union{FloatVector, Nothing}, inv_F::Union{SymMatrix, FloatVector, Nothing}, L::Union{FloatMatrix, Vector{FloatMatrix}, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2, e, inv_F, L);
 call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2);
 
 """
@@ -779,7 +779,7 @@ function ecm(estim::EstimSettings; output_sspace_data::Union{FloatMatrix, JMatri
     sspace, B_star, C_star, Q_view, coordinates_measurement_states, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs, coordinates_transition_P0, coordinates_free_params_B, coordinates_free_params_C = initialise(estim);
 
     # Pre-allocate memory for Kalman filter and smoother
-    status = SizedKalmanStatus(sspace.Y.T);
+    status = SizedKalmanStatus(sspace);
     smoother_arrays = SmootherArrays(estim, sspace, coordinates_measurement_states, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs);
 
     # ECM controls
