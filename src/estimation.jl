@@ -430,7 +430,7 @@ Kalman smoother and CM-step for initial conditions (i.e., X0 and P0)
 
 APIs to call `MessyTimeSeries.update_smoothing_factors!` with SmootherArrays.
 """
-call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}, e::Union{FloatVector, Nothing}, inv_F::Union{SymMatrix, Nothing}, L::Union{FloatMatrix, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2, e, inv_F, L);
+call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}, e::Union{FloatVector, Nothing}, inv_F::Union{SymMatrix, FloatVector, Nothing}, L::Union{FloatMatrix, Vector{FloatMatrix}, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2, e, inv_F, L);
 call_update_smoothing_factors!(sspace::KalmanSettings, status::SizedKalmanStatus, smoother_arrays::SmootherArrays, ind_not_missings::Union{IntVector, Nothing}) = update_smoothing_factors!(sspace, status, ind_not_missings, smoother_arrays.J1, smoother_arrays.J2);
 
 """
