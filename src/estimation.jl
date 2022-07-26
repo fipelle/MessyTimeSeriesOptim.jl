@@ -779,7 +779,7 @@ function ecm(estim::EstimSettings; output_sspace_data::Union{FloatMatrix, JMatri
     sspace, B_star, C_star, Q_view, coordinates_measurement_states, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs, coordinates_transition_P0, coordinates_free_params_B, coordinates_free_params_C = initialise(estim);
 
     # Pre-allocate memory for Kalman filter and smoother
-    status = SizedKalmanStatus(sspace.Y.T);
+    status = SizedKalmanStatus(sspace);
     smoother_arrays = SmootherArrays(estim, sspace, coordinates_measurement_states, coordinates_transition_current, coordinates_transition_lagged, coordinates_transition_PPs);
 
     # ECM controls
