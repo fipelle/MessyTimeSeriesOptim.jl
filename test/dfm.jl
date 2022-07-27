@@ -281,22 +281,18 @@ function dfm_simulation_tests(file_name::String, λ::Number, α::Number, β::Num
     idio_vect = 0.2*ones(n);
 
     # Baseline
-    @info("Running `baseline` tests");
     _, baseline = naive_dfm_simulation(loadings_full, dynamics_full, zeros(n), n, 1, T, lags, λ, α, β, no_sim=10);
     _, baseline_with_idio = naive_dfm_simulation(loadings_full, dynamics_full, idio_vect, n, 1, T, lags, λ, α, β, no_sim=10);
 
     # Sparse dynamics
-    @info("Running `sparse dynamics` tests");
     _, sparse_dynamics = naive_dfm_simulation(loadings_full, dynamics_sparse, zeros(n), n, 1, T, lags, λ, α, β, no_sim=10);
     _, sparse_dynamics_with_idio = naive_dfm_simulation(loadings_full, dynamics_sparse, idio_vect, n, 1, T, lags, λ, α, β, no_sim=10);
 
     # Full sparse
-    @info("Running `full sparse` tests");
     _, full_sparse = naive_dfm_simulation(loadings_sparse, dynamics_sparse, zeros(n), n, 1, T, lags, λ, α, β, no_sim=10);
     _, full_sparse_with_idio = naive_dfm_simulation(loadings_sparse, dynamics_sparse, idio_vect, n, 1, T, lags, λ, α, β, no_sim=10);
 
     # Messy
-    @info("Running `messy` tests");
     _, messy = naive_dfm_simulation(loadings_messy, dynamics_sparse, zeros(n), n, 1, T, lags, λ, α, β, no_sim=10);
     _, messy_with_idio = naive_dfm_simulation(loadings_messy, dynamics_sparse, idio_vect, n, 1, T, lags, λ, α, β, no_sim=10);
 
