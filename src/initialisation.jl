@@ -153,14 +153,14 @@ function call_reparametrised_fmin!(params::Vector{Float64}, tuple_args::Tuple)
 end
 
 """
-    initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool)
+    initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e2], sigma_ub::Vector{Float64}=[1e-1; 1e4])
 
 This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
 
 # Note
 - If both `is_rw_trend` and `is_llt` are false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
-function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool)
+function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e2], sigma_ub::Vector{Float64}=[1e-1; 1e4])
 
     if is_rw_trend && is_llt
         error("Either is_rw_trend or is_llt can be true");
@@ -248,15 +248,15 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
     =#
 
-    params_0  = [1e-2; 1e3; 0.90; zeros(lags-1)];
-    params_lb = [1e-3; 1e2; -1*ones(lags)];
-    params_ub = [1e-1; 1e4; +1*ones(lags)];
+    params_0  = [(sigma_lb + sigma_ub)/2; 0.90; zeros(lags-1)];
+    params_lb = [sigma_lb; -1*ones(lags)];
+    params_ub = [sigma_ub; +1*ones(lags)];
     
     # Add `sigma_{trend}^2 / sigma_{drift}^2` entries
     if is_llt
-        insert!(params_0,  2, 1e-2);
-        insert!(params_lb, 2, 1e-3);
-        insert!(params_ub, 2, 1e-1);
+        insert!(params_0,  2, (sigma_lb[1] + sigma_ub[1])/2);
+        insert!(params_lb, 2, sigma_lb[1]);
+        insert!(params_ub, 2, sigma_ub[1]);
     end
     
     # Best derivative-free option from NLopt -> NLopt.LN_SBPLX()
@@ -296,25 +296,25 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
 end
 
 """
-    initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e2], sigma_ub::Vector{Float64}=[1e-1; 1e4])
 
 This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
 
 If `is_rw_trend` is false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
-function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
-    trend, _, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false);
+function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e2], sigma_ub::Vector{Float64}=[1e-1; 1e4])
+    trend, _, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
     return trend, cycle;
 end
 
 """
-    initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e2], sigma_ub::Vector{Float64}=[1e-1; 1e4])
 
 This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
 
 If `is_rw_trend` is false this function models the trend as a local linear trend.
 """
-function initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
-    trend, drift, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true);
+function initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e2], sigma_ub::Vector{Float64}=[1e-1; 1e4])
+    trend, drift, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
     return trend, drift, cycle;
 end
