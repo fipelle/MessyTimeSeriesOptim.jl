@@ -214,16 +214,8 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, Î
     P0_cycle = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
     P0_trend = Symmetric(Inf*Matrix(I, 2, 2));
     
-    # Reference points to compute the order of magnitude
-    max_abs_data = maximum(skipmissing(abs.(data)));
-    max_abs_P0_cycle = maximum(abs.(P0_cycle));
-    max_abs_data_P0_cycle = max(max_abs_data, max_abs_P0_cycle);
-    
-    # Reference order of magnitude
-    reference_oom = floor(Int, log10(max_abs_data_P0_cycle));
-    
     # Replace infs with large scalar
-    P0_trend[isinf.(P0_trend)] .= 10.0^(reference_oom+3);
+    P0_trend[isinf.(P0_trend)] .= 10.0^floor(Int, 2+log10(first(skipmissing(data))^2));
     
     # Merge into `P0`
     P0 = Symmetric(cat(dims=[1,2], P0_trend, P0_cycle));
