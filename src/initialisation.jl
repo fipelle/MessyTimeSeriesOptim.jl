@@ -312,13 +312,13 @@ function initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int6
 end
 
 """
-    initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings; use_llt::Bool=false)
+    initial_detrending(Y_untrimmed::JMatrix{Float64}, estim::EstimSettings; use_llt::Bool=false)
 
-Detrend each series in `trimmed_data` (nxT). Data can be a copy of `estim.Y` as long as it does not have missings in the first and last point in time.
+Detrend each series in `Y_untrimmed` (nxT). Data can be a copy of `estim.Y`.
 
-Return detrended `trimmed_data`, initial cycles and trends.
+Return initial common trends and detrended data (after having removed initial and ending missings).
 """
-function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings; use_llt::Bool=false)
+function initial_detrending(Y_untrimmed::JMatrix{Float64}, estim::EstimSettings; use_llt::Bool=false)
     
     # Error management
     if !(isdefined(estim, :drifts_selection) &
@@ -333,9 +333,9 @@ function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings
     end
 
     # Trim sample removing initial and ending missings (when needed)
-    first_ind = findfirst(sum(ismissing.(Y_trimmed), dims=1) .== 0)[2];
-    last_ind = findlast(sum(ismissing.(Y_trimmed), dims=1) .== 0)[2];
-    Y_trimmed = Y_trimmed[:, first_ind:last_ind] |> JMatrix{Float64};
+    first_ind = findfirst(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
+    last_ind = findlast(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
+    Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
     n_trimmed, T_trimmed = size(Y_trimmed);
 
     # Compute individual trends
@@ -383,4 +383,7 @@ function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings
     # Compute detrended data
     detrended_data = trends+cycles; # interpolated observables
     detrended_data .-= estim.trends_skeleton*common_trends;
+
+    # Return output
+    return common_trends, detrended_data;
 end
