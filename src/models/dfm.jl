@@ -486,31 +486,8 @@ end
 
 function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
 
-    # Trim sample removing initial and ending missings (when needed)
-    first_ind = findfirst(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
-    last_ind = findlast(sum(ismissing.(estim.Y), dims=1) .== 0)[2];
-    Y_trimmed = estim.Y[:, first_ind:last_ind] |> JMatrix{Float64};
-    T_trimmed = size(Y_trimmed, 2);
-
-    # Compute individual trends
-    trends = zeros(estim.n, T_trimmed);
-    cycles = zeros(estim.n, T_trimmed);
-    for i=1:estim.n
-        verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
-        drifts_selection_id = findfirst(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
-        trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
-    end
-    
-    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
-    common_trends = zeros(estim.n_trends, T_trimmed);
-    for i=1:estim.n_trends
-        coordinates_current_block = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
-        common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
-    end
-
-    # Compute detrended data
-    detrended_data = trends+cycles; # interpolated observables
-    detrended_data .-= estim.trends_skeleton*common_trends;
+    # Initial common trends and detrended data (after having removed initial and ending missings)
+    common_trends, detrended_data = MessyTimeSeriesOptim.initial_detrending(estim.Y, estim);
     
     # Build state-space parameters
     B_trends, C_trends, D_trends, Q_trends, X0_trends, P0_trends = initialise_trends(estim, common_trends);
