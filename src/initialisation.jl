@@ -319,6 +319,8 @@ Detrend each series in `trimmed_data` (nxT). Data can be a copy of `estim.Y` as 
 Return detrended `trimmed_data`, initial cycles and trends.
 """
 function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings; use_llt::Bool=false)
+    
+    # Error management
     if !(isdefined(estim, :drifts_selection) &
          isdefined(estim, :ε) & 
          isdefined(estim, :lags) &
@@ -329,7 +331,7 @@ function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings
         
         error("This `estim` does not contain the required fields to run `initial_detrending(...)`!");
     end
-
+    
     # Trim sample removing initial and ending missings (when needed)
     first_ind = findfirst(sum(ismissing.(Y_aggregate), dims=1) .== 0)[2];
     last_ind = findlast(sum(ismissing.(Y_aggregate), dims=1) .== 0)[2];
