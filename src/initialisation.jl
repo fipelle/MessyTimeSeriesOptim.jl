@@ -310,3 +310,75 @@ function initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int6
     trend, drift, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
     return trend, drift, cycle;
 end
+
+"""
+    initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings; use_llt::Bool=false)
+
+Detrend each series in `trimmed_data` (nxT). Data can be a copy of `estim.Y` as long as it does not have missings in the first and last point in time.
+
+Return detrended `trimmed_data`, initial cycles and trends.
+"""
+function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings; use_llt::Bool=false)
+    if !(isdefined(estim, :drifts_selection) &
+         isdefined(estim, :ε) & 
+         isdefined(estim, :lags) &
+         isdefined(estim, :n_trends) &
+         isdefined(estim, :trends_skeleton) &
+         isdefined(estim, :verb)
+        )
+        
+        error("This `estim` does not contain the required fields to run `initial_detrending(...)`!");
+    end
+
+    # Trim sample removing initial and ending missings (when needed)
+    first_ind = findfirst(sum(ismissing.(Y_aggregate), dims=1) .== 0)[2];
+    last_ind = findlast(sum(ismissing.(Y_aggregate), dims=1) .== 0)[2];
+    Y_aggregate = Y_aggregate[:, first_ind:last_ind] |> JMatrix{Float64};
+    n_aggregate, T_aggregate = size(Y_aggregate);
+
+    # Compute individual trends
+    trends = zeros(n_aggregate, T_aggregate);
+    cycles = zeros(n_aggregate, T_aggregate); 
+    for i=1:n_aggregate
+        verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
+        drifts_selection_ids = findall(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
+        if length(drifts_selection_ids) > 0
+            drifts_selection_id = drifts_selection_ids[findmax(i -> estim.drifts_selection[i], drifts_selection_ids)[2]];
+            trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_aggregate[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
+        else
+            cycles[i, :] .= Y_aggregate[i, :];
+        end
+    end
+
+    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
+    common_trends = zeros(estim.n_trends, T_aggregate);
+
+    # Looping over each trend in `common_trends`
+    for i=1:estim.n_trends
+
+        # `coordinates_current_block` denotes a vector of integers representing the series loading onto the i-th trend
+        coordinates_current_block = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
+        
+        # Unadjusted estimate (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
+        common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
+
+        # Adjustment factor (consider the current trend as an increment from previous ones)
+        previous_trends_mean = zeros(1, T_aggregate);
+
+        # Loop over each series' id in `coordinates_current_block`
+        for j in coordinates_current_block
+            previous_trends_coordinates = findall(view(estim.trends_skeleton, j, 1:i-1) .!= 0.0); # for the j-th series, all trends before loading the i-th one
+            if length(previous_trends_coordinates) > 0
+                previous_trends_mean .+= sum(common_trends[previous_trends_coordinates, :], dims=1); # update `previous_trends_mean` with the total trend value for the j-th series, before loading the i-th one
+            end
+        end
+        previous_trends_mean ./= length(coordinates_current_block); # dividing by the length of `coordinates_current_block` is correct, even when no previous trends are associated to one or more series - it can be easily proved algebrically
+
+        # Adjusted estimate (if necessary)
+        common_trends[i, :] .-= previous_trends_mean[:];
+    end
+    
+    # Compute detrended data
+    detrended_data = trends+cycles; # interpolated observables
+    detrended_data .-= estim.trends_skeleton*common_trends;
+end
