@@ -331,29 +331,29 @@ function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings
         
         error("This `estim` does not contain the required fields to run `initial_detrending(...)`!");
     end
-    
+
     # Trim sample removing initial and ending missings (when needed)
-    first_ind = findfirst(sum(ismissing.(Y_aggregate), dims=1) .== 0)[2];
-    last_ind = findlast(sum(ismissing.(Y_aggregate), dims=1) .== 0)[2];
-    Y_aggregate = Y_aggregate[:, first_ind:last_ind] |> JMatrix{Float64};
-    n_aggregate, T_aggregate = size(Y_aggregate);
+    first_ind = findfirst(sum(ismissing.(Y_trimmed), dims=1) .== 0)[2];
+    last_ind = findlast(sum(ismissing.(Y_trimmed), dims=1) .== 0)[2];
+    Y_trimmed = Y_trimmed[:, first_ind:last_ind] |> JMatrix{Float64};
+    n_trimmed, T_trimmed = size(Y_trimmed);
 
     # Compute individual trends
-    trends = zeros(n_aggregate, T_aggregate);
-    cycles = zeros(n_aggregate, T_aggregate); 
-    for i=1:n_aggregate
+    trends = zeros(n_trimmed, T_trimmed);
+    cycles = zeros(n_trimmed, T_trimmed); 
+    for i=1:n_trimmed
         verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
         drifts_selection_ids = findall(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
         if length(drifts_selection_ids) > 0
             drifts_selection_id = drifts_selection_ids[findmax(i -> estim.drifts_selection[i], drifts_selection_ids)[2]];
-            trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_aggregate[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
+            trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
         else
-            cycles[i, :] .= Y_aggregate[i, :];
+            cycles[i, :] .= Y_trimmed[i, :];
         end
     end
 
     # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
-    common_trends = zeros(estim.n_trends, T_aggregate);
+    common_trends = zeros(estim.n_trends, T_trimmed);
 
     # Looping over each trend in `common_trends`
     for i=1:estim.n_trends
@@ -365,7 +365,7 @@ function initial_detrending(trimmed_data::JMatrix{Float64}, estim::EstimSettings
         common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
 
         # Adjustment factor (consider the current trend as an increment from previous ones)
-        previous_trends_mean = zeros(1, T_aggregate);
+        previous_trends_mean = zeros(1, T_trimmed);
 
         # Loop over each series' id in `coordinates_current_block`
         for j in coordinates_current_block
