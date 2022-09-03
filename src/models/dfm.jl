@@ -498,17 +498,17 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     D = cat(dims=[1,2], D_trends, D_cycles);
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
     
-    # Reference points to compute the order of magnitude
-    max_abs_data = maximum(skipmissing(abs.(estim.Y)));
-    max_abs_P0_cycles = maximum(abs.(P0_cycles));
-    max_abs_data_P0_cycles = max(max_abs_data, max_abs_P0_cycles);
+    # Finalise initialisation of X0_trends and P0_trends (starts diffuse -> then estimated with the ECM algorithm)
+    coordinates_non_deterministic_trends = findall(sum(D_trends, dims=2)[:] .== 1);
+    for (i, j) in enumerate(coordinates_non_deterministic_trends);
+        for k in j:j+1+estim.drifts_selection[i]
+            # The line `X0_trends[k] = some value` could be used for an ad-hoc initialisation of `X0_trends`
+            P0_trends[k, k] = 10^floor(Int, 2+log10(common_trends[i, 1]^2));
+        end
+    end
     
-    # Reference order of magnitude
-    reference_oom = floor(Int, log10(max_abs_data_P0_cycles));
-
-    # Finalise initialisation of P0_trends
-    P0_trends[isinf.(P0_trends)] .= 10.0^(reference_oom+3);
-
+    P0_trends[isnan.(P0_trends)] .= 0; # initial covariances between non-stationary components (set to zero to get a diffuse initialisation)
+    
     # Initial conditions
     X0 = vcat(X0_trends, X0_cycles);
     P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_cycles));
