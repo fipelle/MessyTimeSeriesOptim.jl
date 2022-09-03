@@ -487,7 +487,7 @@ end
 function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
 
     # Initial common trends and detrended data (after having removed initial and ending missings)
-    common_trends, detrended_data = MessyTimeSeriesOptim.initial_detrending(estim.Y, estim);
+    common_trends, detrended_data = initial_detrending(estim.Y, estim);
     
     # Build state-space parameters
     B_trends, C_trends, D_trends, Q_trends, X0_trends, P0_trends = initialise_trends(estim, common_trends);
