@@ -501,9 +501,9 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     # Finalise initialisation of X0_trends and P0_trends (starts diffuse -> then estimated with the ECM algorithm)
     coordinates_non_deterministic_trends = findall(sum(D_trends, dims=2)[:] .== 1);
     for (i, j) in enumerate(coordinates_non_deterministic_trends);        
-        for k in ifelse(estim.drifts_selection[i], j-2:j+1, j:j+3) # j:j+1+2*(1-estim.drifts_selection[i])
+        for k in ifelse(estim.drifts_selection[i], j-2:j+1, j:j+1) # changing j-2:j+1 to j:j+1 and removing the comment at line #511 allows to initialise to zero the relevant part of P0 associated with deterministic trends
             @infiltrate
-            # The line `X0_trends[k] = some value` could be used for an ad-hoc initialisation of `X0_trends`
+            # Something like `X0_trends[k] = some value` could be used here for an ad-hoc initialisation of `X0_trends`
             P0_trends[k, k] = 10^floor(Int, 2+log10(common_trends[i, 1]^2));
         end
     end
