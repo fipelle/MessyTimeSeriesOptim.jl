@@ -502,6 +502,7 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     coordinates_non_deterministic_trends = findall(sum(D_trends, dims=2)[:] .== 1);
     for (i, j) in enumerate(coordinates_non_deterministic_trends);
         for k in j:j+1+2*estim.drifts_selection[i]
+            @infiltrate
             # The line `X0_trends[k] = some value` could be used for an ad-hoc initialisation of `X0_trends`
             P0_trends[k, k] = 10^floor(Int, 2+log10(common_trends[i, 1]^2));
         end
