@@ -153,14 +153,14 @@ function call_reparametrised_fmin!(params::Vector{Float64}, tuple_args::Tuple)
 end
 
 """
-    initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool)
+    initial_univariate_decomposition(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
 
 This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
 
 # Note
 - If both `is_rw_trend` and `is_llt` are false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
-function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool)
+function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
 
     if is_rw_trend && is_llt
         error("Either is_rw_trend or is_llt can be true");
@@ -214,16 +214,8 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     P0_cycle = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
     P0_trend = Symmetric(Inf*Matrix(I, 2, 2));
     
-    # Reference points to compute the order of magnitude
-    max_abs_data = maximum(skipmissing(abs.(data)));
-    max_abs_P0_cycle = maximum(abs.(P0_cycle));
-    max_abs_data_P0_cycle = max(max_abs_data, max_abs_P0_cycle);
-    
-    # Reference order of magnitude
-    reference_oom = floor(Int, log10(max_abs_data_P0_cycle));
-    
     # Replace infs with large scalar
-    P0_trend[isinf.(P0_trend)] .= 10.0^(reference_oom+3);
+    P0_trend[isinf.(P0_trend)] .= 10.0^floor(Int, 2+log10(first(skipmissing(data))^2));
     
     # Merge into `P0`
     P0 = Symmetric(cat(dims=[1,2], P0_trend, P0_cycle));
@@ -248,15 +240,15 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
     In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
     =#
 
-    params_0  = [1e-2; 1e3; 0.90; zeros(lags-1)];
-    params_lb = [1e-3; 1e2; -1*ones(lags)];
-    params_ub = [1e-1; 1e4; +1*ones(lags)];
+    params_0  = [(sigma_lb + sigma_ub)/2; 0.90; zeros(lags-1)];
+    params_lb = [sigma_lb; -1*ones(lags)];
+    params_ub = [sigma_ub; +1*ones(lags)];
     
     # Add `sigma_{trend}^2 / sigma_{drift}^2` entries
     if is_llt
-        insert!(params_0,  2, 1e-2);
-        insert!(params_lb, 2, 1e-3);
-        insert!(params_ub, 2, 1e-1);
+        insert!(params_0,  2, (sigma_lb[1] + sigma_ub[1])/2);
+        insert!(params_lb, 2, sigma_lb[1]);
+        insert!(params_ub, 2, sigma_ub[1]);
     end
     
     # Best derivative-free option from NLopt -> NLopt.LN_SBPLX()
@@ -296,25 +288,102 @@ function initial_univariate_decomposition(data::JVector{Float64}, lags::Int64, �
 end
 
 """
-    initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    initial_univariate_decomposition_kitagawa(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
 
 This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
 
 If `is_rw_trend` is false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
-function initial_univariate_decomposition_kitagawa(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
-    trend, _, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false);
+function initial_univariate_decomposition_kitagawa(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
+    trend, _, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
     return trend, cycle;
 end
 
 """
-    initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
+    initial_univariate_decomposition_llt(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
 
 This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
 
 If `is_rw_trend` is false this function models the trend as a local linear trend.
 """
-function initial_univariate_decomposition_llt(data::JVector{Float64}, lags::Int64, ε::Float64, is_rw_trend::Bool)
-    trend, drift, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true);
+function initial_univariate_decomposition_llt(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
+    trend, drift, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
     return trend, drift, cycle;
+end
+
+"""
+    initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; use_llt::Bool=false)
+
+Detrend each series in `Y_untrimmed` (nxT). Data can be a copy of `estim.Y`.
+
+Return initial common trends and detrended data (after having removed initial and ending missings).
+"""
+function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; use_llt::Bool=false)
+    
+    # Error management
+    if !(isdefined(estim, :drifts_selection) &
+         isdefined(estim, :ε) & 
+         isdefined(estim, :lags) &
+         isdefined(estim, :n_trends) &
+         isdefined(estim, :trends_skeleton) &
+         isdefined(estim, :verb)
+        )
+        
+        error("This `estim` does not contain the required fields to run `initial_detrending(...)`!");
+    end
+
+    # Trim sample removing initial and ending missings (when needed)
+    first_ind = findfirst(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
+    last_ind = findlast(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
+    Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
+    n_trimmed, T_trimmed = size(Y_trimmed);
+
+    # Compute individual trends
+    trends = zeros(n_trimmed, T_trimmed);
+    cycles = zeros(n_trimmed, T_trimmed); 
+    for i=1:n_trimmed
+        verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
+        drifts_selection_ids = findall(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
+        if length(drifts_selection_ids) > 0
+            drifts_selection_id = drifts_selection_ids[findmax(i -> estim.drifts_selection[i], drifts_selection_ids)[2]];
+            trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
+        else
+            cycles[i, :] .= Y_trimmed[i, :];
+        end
+    end
+
+    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
+    common_trends = zeros(estim.n_trends, T_trimmed);
+
+    # Looping over each trend in `common_trends`
+    for i=1:estim.n_trends
+
+        # `coordinates_current_block` denotes a vector of integers representing the series loading onto the i-th trend
+        coordinates_current_block = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
+        
+        # Unadjusted estimate (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
+        common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
+
+        # Adjustment factor (consider the current trend as an increment from previous ones)
+        previous_trends_mean = zeros(1, T_trimmed);
+
+        # Loop over each series' id in `coordinates_current_block`
+        for j in coordinates_current_block
+            previous_trends_coordinates = findall(view(estim.trends_skeleton, j, 1:i-1) .!= 0.0); # for the j-th series, all trends before loading the i-th one
+            if length(previous_trends_coordinates) > 0
+                previous_trends_mean .+= sum(common_trends[previous_trends_coordinates, :], dims=1); # update `previous_trends_mean` with the total trend value for the j-th series, before loading the i-th one
+            end
+        end
+        previous_trends_mean ./= length(coordinates_current_block); # dividing by the length of `coordinates_current_block` is correct, even when no previous trends are associated to one or more series - it can be easily proved algebrically
+
+        # Adjusted estimate (if necessary)
+        common_trends[i, :] .-= previous_trends_mean[:];
+    end
+    
+    # Compute detrended data
+    detrended_data = trends+cycles; # interpolated observables
+    detrended_data .-= estim.trends_skeleton*common_trends;
+
+    # Return output
+    return common_trends, detrended_data;
 end
