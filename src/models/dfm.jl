@@ -740,7 +740,7 @@ Compute scaling factors for each series in `estim.Y`.
 function compute_scaling_factors(estim::DFMSettings)
     
     # Initialise `scaling_factors`
-    scaling_factors = zeros(size(estim.Y, 1), 1); # the final `, 1` is needed to run rescale_estim_params!(...) since it expects a matrix of floats
+    scaling_factors = zeros(estim.n, 1); # the final `, 1` is needed to run rescale_estim_params!(...) since it expects a matrix of floats
 
     # Compute scaling factors
     for i in axes(estim.Y, 1)
