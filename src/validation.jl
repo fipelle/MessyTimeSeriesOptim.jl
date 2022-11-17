@@ -81,17 +81,17 @@ function fc_err(validation_settings::ValidationSettings, p::Int64, Î»::Number, Î
     end
 
     # Standardise data
-    data_presample = @view data[:, 1:t0];
+    data_presample_view = @view data[:, 1:t0];
 
     # Stop if the estimation sample is entirely missing
-    if count(ismissing, data_presample) == validation_settings.n*t0
+    if count(ismissing, data_presample_view) == validation_settings.n*t0
         return [0.0, 1.0];
 
     # Standard run
     else
         if validation_settings.is_stationary
-            mean_presample = mean_skipmissing(data_presample);
-            std_presample = std_skipmissing(data_presample);
+            mean_presample = mean_skipmissing(data_presample_view);
+            std_presample = std_skipmissing(data_presample_view);
             Y = (data .- mean_presample) ./ std_presample;
         else
             std_presample = std_skipmissing(diff(data_presample, dims=2));
