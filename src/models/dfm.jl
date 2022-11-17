@@ -740,7 +740,7 @@ Compute scaling factors for each series in `estim.Y`.
 function compute_scaling_factors(estim::DFMSettings)
     
     # Initialise `std_diff_data`
-    std_diff_data = zeros(size(data, 1), 1); # the final `, 1` is needed to run MessyTimeSeriesOptim.rescale_estim_params!(...) since it expects a matrix of floats
+    std_diff_data = zeros(size(data, 1), 1); # the final `, 1` is needed to run rescale_estim_params!(...) since it expects a matrix of floats
 
     # Aggregate data
     for i in axes(data, 1)
