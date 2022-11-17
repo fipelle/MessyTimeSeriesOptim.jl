@@ -88,6 +88,7 @@ function fc_err(validation_settings::ValidationSettings, p::Int64, Î»::Number, Î
         return [0.0, 1.0];
 
     # Standard run
+    # TBD: Generalise further the standardisation process for future models whose DataTypes arguments are transformations of the data
     else
         if validation_settings.is_stationary
             mean_presample = mean_skipmissing(data_presample_view);
