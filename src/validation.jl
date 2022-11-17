@@ -98,7 +98,7 @@ function fc_err(validation_settings::ValidationSettings, p::Int64, Î»::Number, Î
 
         # Standardise non-stationary data
         else
-            std_presample = std_skipmissing(diff(data_presample, dims=2));
+            std_presample = compute_scaling_factors(estim);
             Y = data ./ std_presample;
         end
 
