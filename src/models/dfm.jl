@@ -739,17 +739,17 @@ Compute scaling factors for each series in `estim.Y`.
 """
 function compute_scaling_factors(estim::DFMSettings)
     
-    # Initialise `std_diff_data`
-    std_diff_data = zeros(size(data, 1), 1); # the final `, 1` is needed to run rescale_estim_params!(...) since it expects a matrix of floats
+    # Initialise `scaling_factors`
+    scaling_factors = zeros(size(estim.Y, 1), 1); # the final `, 1` is needed to run rescale_estim_params!(...) since it expects a matrix of floats
 
-    # Aggregate data
-    for i in axes(data, 1)
+    # Compute scaling factors
+    for i in axes(estim.Y, 1)
         coordinates_trends = findall(view(estim.trends_skeleton, i, :) .!= 0);
         max_order = maximum(view(estim.drifts_selection, coordinates_trends)); # either 1 (smooth trend) or 0 (random walk)
-        std_diff_data[i] = compute_scaling_factor(data[i, :], max_order==0);
+        scaling_factors[i] = compute_scaling_factor(estim.Y[i, :], max_order==0);
     end
    
-    return std_diff_data;
+    return scaling_factors;
 end
 
 """
