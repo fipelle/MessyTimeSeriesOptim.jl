@@ -80,27 +80,31 @@ function fc_err(validation_settings::ValidationSettings, p::Int64, λ::Number, �
         data = validation_settings.Y;
     end
 
-    # Standardise data
-    data_presample = @view data[:, 1:t0];
-
     # Stop if the estimation sample is entirely missing
-    if count(ismissing, data_presample) == validation_settings.n*t0
+    if count(ismissing, view(data, :, 1:t0)) == validation_settings.n*t0
         return [0.0, 1.0];
 
     # Standard run
+    # TBD: Generalise further the standardisation process for future models whose DataTypes arguments are transformations of the data
     else
+        estim = validation_settings.model_struct(data[:, 1:t0], validation_settings.model_args, validation_settings.model_kwargs, p, λ, α, β);
+
+        # Standardise stationary data
         if validation_settings.is_stationary
-            mean_presample = mean_skipmissing(data_presample);
-            std_presample = std_skipmissing(data_presample);
+            mean_presample = mean_skipmissing(estim.Y);
+            std_presample = std_skipmissing(estim.Y);
             Y = (data .- mean_presample) ./ std_presample;
+            estim.Y .-= mean_presample; # first step of the estimation sample standardisation
+
+        # Standardise non-stationary data
         else
-            std_presample = std_skipmissing(diff(data_presample, dims=2));
+            std_presample = compute_scaling_factors(estim);
             Y = data ./ std_presample;
         end
 
-        estim = validation_settings.model_struct(Y[:, 1:t0], validation_settings.model_args, validation_settings.model_kwargs, p, λ, α, β);
+        estim.Y ./= std_presample; # final step of the data estimation sample standardisation
         rescale_estim_params!(validation_settings.coordinates_params_rescaling, estim, std_presample);
-
+        
         # Estimate model
         sspace = ecm(estim, output_sspace_data=Y);
 
