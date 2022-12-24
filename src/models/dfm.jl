@@ -409,13 +409,14 @@ function initialise_cycles(estim::DFMSettings, data::FloatMatrix)
         
         # Estimate ridge autoregressive coefficients
         idio_y, idio_x = lag(permutedims(residual_data[i, :]), 1);
-        #=
-        # Remove comment to initialise as AR(1)
+        
+        # Initialise as AR(1)
         idio_coeff = idio_y*idio_x'/Symmetric(idio_x*idio_x' .+ estim.Γ[1,1]);
         MessyTimeSeriesOptim.enforce_causality_and_invertibility!(idio_coeff);
-        =#
-        idio_coeff = zeros(1,1);
-
+        
+        # Remove comment to initialise as a white noise
+        # idio_coeff = zeros(1,1);
+        
         # Estimate var-cov matrix of the residuals
         idio_resid = idio_y - idio_coeff*idio_x;
         idio_resid_var = (idio_resid*idio_resid')/length(idio_resid);
