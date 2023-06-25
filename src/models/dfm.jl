@@ -499,12 +499,13 @@ function initialise(estim::DFMSettings, trends_skeleton::FloatMatrix)
     D = cat(dims=[1,2], D_trends, D_cycles);
     Q = Symmetric(cat(dims=[1,2], Q_trends, Q_cycles));
     
-    # Finalise initialisation of X0_trends and P0_trends (starts diffuse -> then estimated with the ECM algorithm)
+    # Finalise initialisation of X0_trends and P0_trends
     coordinates_non_deterministic_trends = findall(sum(D_trends, dims=2)[:] .== 1);
-    for (i, j) in enumerate(coordinates_non_deterministic_trends);        
+    for (i, j) in enumerate(coordinates_non_deterministic_trends);
         for k in ifelse(estim.drifts_selection[i], j-2:j+1, j:j+1) # changing j-2:j+1 to j:j+1 and removing the comment at line #511 allows to initialise to zero the relevant part of P0 associated with deterministic trends
-            # Something like `X0_trends[k] = some value` could be used here for an ad-hoc initialisation of `X0_trends`
-            P0_trends[k, k] = 10.0^floor(Int, 2+log10(common_trends[i, 1]^2));
+            # The line `X0_trends[k] = some value` could be used for an ad-hoc initialisation of `X0_trends`
+            X0_trends[k] = common_trends[i, 1];
+            P0_trends[k, k] = 10.0^floor(Int, 1+log10(abs(common_trends[i, 1])));
         end
     end
     
