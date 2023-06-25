@@ -214,8 +214,9 @@ function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float
     P0_cycle = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
     P0_trend = Symmetric(Inf*Matrix(I, 2, 2));
     
-    # Replace infs with large scalar
-    P0_trend[isinf.(P0_trend)] .= 10.0^floor(Int, 2+log10(first(skipmissing(data))^2));
+    # Trend initialisation
+    X0[1] = first(skipmissing(data)); # this allows for a weakly diffuse initialisation of the trend
+    P0_trend[isinf.(P0_trend)] .= 10.0^floor(Int, 1+log10(abs(first(skipmissing(data)))));
     
     # Merge into `P0`
     P0 = Symmetric(cat(dims=[1,2], P0_trend, P0_cycle));
