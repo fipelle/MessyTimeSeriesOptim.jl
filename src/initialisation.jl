@@ -359,26 +359,20 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Looping over each trend in `common_trends`
     for i=1:estim.n_trends
 
-        # `coordinates_current_block` denotes a vector of integers representing the series loading onto the i-th trend
-        coordinates_current_block = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
+        # Determine which series to focus on
+        series_loading_on_current_trend = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
+        series_loading_on_further_trends = [sum(view(estim.trends_skeleton, j, :) .!= 0.0) .> 1 for j in series_loading_on_current_trend];
         
+        # Get selection of series onto which compute the current common trend
+        coordinates_current_block = series_loading_on_current_trend[.!series_loading_on_further_trends];
+
         # Unadjusted estimate (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
         common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
 
-        # Adjustment factor (consider the current trend as an increment from previous ones)
-        previous_trends_mean = zeros(1, T_trimmed);
-
-        # Loop over each series' id in `coordinates_current_block`
-        for j in coordinates_current_block
-            previous_trends_coordinates = findall(view(estim.trends_skeleton, j, 1:i-1) .!= 0.0); # for the j-th series, all trends before loading the i-th one
-            if length(previous_trends_coordinates) > 0
-                previous_trends_mean .+= sum(common_trends[previous_trends_coordinates, :], dims=1); # update `previous_trends_mean` with the total trend value for the j-th series, before loading the i-th one
-            end
+        # Update `trends`
+        for j in series_loading_on_current_trend
+            trends[j, :] .-= estim.trends_skeleton[j, i]*common_trends[i, :];
         end
-        previous_trends_mean ./= length(coordinates_current_block); # dividing by the length of `coordinates_current_block` is correct, even when no previous trends are associated to one or more series - it can be easily proved algebrically
-
-        # Adjusted estimate (if necessary)
-        common_trends[i, :] .-= previous_trends_mean[:];
     end
     
     # Compute detrended data
