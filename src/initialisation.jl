@@ -361,7 +361,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
 
         # Determine which series to focus on
         series_loading_on_current_trend = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
-        series_loading_on_further_trends = [sum(view(estim.trends_skeleton, j, :) .!= 0.0) .> 1 for j in series_loading_on_current_trend];
+        series_loading_on_further_trends = [findlast(view(estim.trends_skeleton, j, :) .!= 0.0) .> i for j in series_loading_on_current_trend];
         
         # Get selection of series onto which compute the current common trend
         coordinates_current_block = series_loading_on_current_trend[.!series_loading_on_further_trends];
