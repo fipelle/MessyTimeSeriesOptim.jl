@@ -353,6 +353,9 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
         end
     end
 
+    # Interpolated observables (NOTE: not detrended yet!)
+    detrended_data = trends+cycles;
+    
     # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
     common_trends = zeros(estim.n_trends, T_trimmed);
 
@@ -376,7 +379,6 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     end
     
     # Compute detrended data
-    detrended_data = trends+cycles; # interpolated observables
     detrended_data .-= estim.trends_skeleton*common_trends;
 
     # Return output
