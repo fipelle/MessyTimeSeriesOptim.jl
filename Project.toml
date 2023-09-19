@@ -1,6 +1,6 @@
 name = "MessyTimeSeriesOptim"
 uuid = "7115d47b-e118-4204-bc33-dbd7ed133e66"
-version = "0.1.9"
+version = "0.2.0"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
