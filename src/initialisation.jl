@@ -286,7 +286,7 @@ function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float
     trend = smoothed_states_matrix[1, :];
     drift_or_trend_lagged = smoothed_states_matrix[2, :];
     cycle = smoothed_states_matrix[3, :];
-    println(var(trends[3:end]-2*trends[2:end-1]+trends[1:end-2]));
+    println(var(trend[3:end]-2*trend[2:end-1]+trend[1:end-2]));
     println("");
     
     # Return output
