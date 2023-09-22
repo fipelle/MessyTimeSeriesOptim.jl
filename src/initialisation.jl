@@ -276,6 +276,9 @@ function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float
     update_sspace_C_from_params!(minimizer_bounded, is_llt, sspace);
     update_sspace_DQD_and_P0_from_params!(sspace);
     
+    # Get variance of the innovations
+    println(minimizer_bounded[1]*minimizer_bounded[2]);
+
     # Retrieve optimal states
     status = kfilter_full_sample(sspace);
     smoothed_states, _ = ksmoother(sspace, status);
@@ -283,7 +286,9 @@ function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float
     trend = smoothed_states_matrix[1, :];
     drift_or_trend_lagged = smoothed_states_matrix[2, :];
     cycle = smoothed_states_matrix[3, :];
-
+    println(var(trends[3:end]-2*trends[2:end-1]+trends[1:end-2]));
+    println("");
+    
     # Return output
     return trend, drift_or_trend_lagged, cycle, status;
 end
