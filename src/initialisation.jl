@@ -277,7 +277,7 @@ function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float
     update_sspace_DQD_and_P0_from_params!(sspace);
     
     # Get variance of the innovations
-    println(minimizer_bounded[1]*minimizer_bounded[2]);
+    println(minimizer_bounded[1]);
 
     # Retrieve optimal states
     status = kfilter_full_sample(sspace);
