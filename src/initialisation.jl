@@ -341,13 +341,16 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
 
     # Compute individual trends
     trends = zeros(n_trimmed, T_trimmed);
-    cycles = zeros(n_trimmed, T_trimmed); 
+    cycles = zeros(n_trimmed, T_trimmed);
+    trends_variance = zeros(n_trimmed);
+
     for i=1:n_trimmed
         verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
         drifts_selection_ids = findall(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
         if length(drifts_selection_ids) > 0
             drifts_selection_id = drifts_selection_ids[findmax(i -> estim.drifts_selection[i], drifts_selection_ids)[2]];
-            trends[i, :], cycles[i, :] = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
+            trends[i, :], cycles[i, :], minimizer_bounded = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
+            trends_variance[i] = minimizer_bounded[1];
         else
             cycles[i, :] .= Y_trimmed[i, :];
         end
@@ -358,7 +361,8 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     
     # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
     common_trends = zeros(estim.n_trends, T_trimmed);
-
+    common_trends_variance = zeros(estim.n_trends);
+    
     # Looping over each trend in `common_trends`
     for i=1:estim.n_trends
 
@@ -369,8 +373,15 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
         # Get selection of series onto which compute the current common trend
         coordinates_current_block = series_loading_on_current_trend[.!series_loading_on_further_trends];
 
-        # Unadjusted estimate (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
+        # Unadjusted estimate of the trend (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
         common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
+        
+        # Unadjusted estimate of the variances per series
+        unadjusted_trends_variance = trends_variance[coordinates_current_block];
+        unadjusted_trends_variance /= sum(estim.trends_skeleton[coordinates_current_block, :] .!= 0.0, dims=2);
+
+        # Adjusted estimate of the initial variance for the common trend (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
+        common_trends_variance[i] = mean(unadjusted_trends_variance[coordinates_current_block] ./ estim.trends_skeleton[coordinates_current_block, i]);
 
         # Update `trends`
         for j in series_loading_on_current_trend
@@ -382,5 +393,5 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     detrended_data .-= estim.trends_skeleton*common_trends;
 
     # Return output
-    return common_trends, detrended_data;
+    return common_trends, common_trends_variance, detrended_data;
 end
