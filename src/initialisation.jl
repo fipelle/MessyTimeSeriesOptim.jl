@@ -276,9 +276,6 @@ function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float
     update_sspace_C_from_params!(minimizer_bounded, is_llt, sspace);
     update_sspace_DQD_and_P0_from_params!(sspace);
     
-    # Get variance of the innovations
-    println(minimizer_bounded[1]);
-
     # Retrieve optimal states
     status = kfilter_full_sample(sspace);
     smoothed_states, _ = ksmoother(sspace, status);
@@ -286,11 +283,9 @@ function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float
     trend = smoothed_states_matrix[1, :];
     drift_or_trend_lagged = smoothed_states_matrix[2, :];
     cycle = smoothed_states_matrix[3, :];
-    println(var(trend[3:end]-2*trend[2:end-1]+trend[1:end-2]));
-    println("");
-    
+
     # Return output
-    return trend, drift_or_trend_lagged, cycle, status;
+    return trend, drift_or_trend_lagged, cycle, minimizer_bounded, status;
 end
 
 """
@@ -301,8 +296,8 @@ This function returns an initial estimate of the non-stationary and stationary c
 If `is_rw_trend` is false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
 """
 function initial_univariate_decomposition_kitagawa(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
-    trend, _, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
-    return trend, cycle;
+    trend, _, cycle, minimizer_bounded, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
+    return trend, cycle, minimizer_bounded;
 end
 
 """
@@ -313,8 +308,8 @@ This function returns an initial estimate of the non-stationary and stationary c
 If `is_rw_trend` is false this function models the trend as a local linear trend.
 """
 function initial_univariate_decomposition_llt(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
-    trend, drift, cycle, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
-    return trend, drift, cycle;
+    trend, drift, cycle, minimizer_bounded, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
+    return trend, drift, cycle, minimizer_bounded;
 end
 
 """
