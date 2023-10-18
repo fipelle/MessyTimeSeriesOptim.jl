@@ -378,10 +378,10 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
         
         # Unadjusted estimate of the variances per series
         unadjusted_trends_variance = trends_variance[coordinates_current_block];
-        unadjusted_trends_variance ./= sum(estim.trends_skeleton[coordinates_current_block, :] .!= 0.0, dims=2);
+        unadjusted_trends_variance ./= sum(estim.trends_skeleton[coordinates_current_block, :] .!= 0.0, dims=2)[:];
 
         # Adjusted estimate of the initial variance for the common trend (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
-        common_trends_variance[i] = mean(unadjusted_trends_variance[coordinates_current_block] ./ estim.trends_skeleton[coordinates_current_block, i]);
+        common_trends_variance[i] = mean(unadjusted_trends_variance ./ estim.trends_skeleton[coordinates_current_block, i].^2);
 
         # Update `trends`
         for j in series_loading_on_current_trend
