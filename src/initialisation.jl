@@ -393,5 +393,5 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     detrended_data .-= estim.trends_skeleton*common_trends;
 
     # Return output
-    return common_trends, common_trends_variance, detrended_data;
+    return common_trends, trends_variance, detrended_data;
 end
