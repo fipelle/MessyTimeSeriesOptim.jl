@@ -350,7 +350,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
         if length(drifts_selection_ids) > 0
             drifts_selection_id = drifts_selection_ids[findmax(i -> estim.drifts_selection[i], drifts_selection_ids)[2]];
             trends[i, :], cycles[i, :], minimizer_bounded = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
-            trends_variance[i] = minimizer_bounded[1];
+            trends_variance[i] = minimizer_bounded[3];
         else
             cycles[i, :] .= Y_trimmed[i, :];
         end
