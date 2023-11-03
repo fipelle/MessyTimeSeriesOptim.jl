@@ -51,7 +51,7 @@ function initial_sspace_structure(
 
     # Setup selection matrix D for idiosyncratic cycles
     D_idio_cycles = 1.0*Matrix(I, n_series_in_data, n_series_in_data);
-    
+
     # Setup selection matrix D for the common cycles
     D_common_cycles_template = zeros(estim.lags);
     D_common_cycles_template[1] = 1.0;
@@ -61,5 +61,19 @@ function initial_sspace_structure(
     D = cat(dims=[1,2], D_trends, D_idio_cycles, D_common_cycles);
 
     # Setup initial conditions for the trends
-    # -> TBA (loop over trends to initialise on the mean of the data w common components)
+    X0_trends = zeros(estim.n_trends);
+    P0_trends = Symmetric(zeros(estim.n_trends, estim.n_trends));
+
+    # Loop over the trends
+    for i=1:estim.n_trends
+        
+        # Get data in current trend
+        coordinates_data_in_trend = findall(view(estim.trends_skeleton, :, i) .!= 0);
+        data_in_trend = view(data, coordinates_data_in_trend, :);
+        first_data_in_trend = [first(skipmissing(view(data_in_trend, j, :))) for j in axes(data_in_trend, 1)]
+
+        # Initial conditions
+        X0_trends[i] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
+        P0_trends.data[i, i] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
+    end
 end
