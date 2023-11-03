@@ -10,7 +10,7 @@ function initial_sspace_structure(
     B_trends = kron(estim.trends_skeleton, [1.0 0.0]);
 
     # Setup loadings structure for the idiosyncratic cycles
-    B_idio_cycles = Matrix(I, n_series_in_data, n_series_in_data) |> Matrix{Float64};
+    B_idio_cycles = 1.0*Matrix(I, n_series_in_data, n_series_in_data);
 
     # Setup loading structure for the cycles, employing the relevant identification scheme
     B_common_cycles = kron(estim.cycles_skeleton, ones(1, estim.lags));
@@ -21,7 +21,7 @@ function initial_sspace_structure(
 
     # Setup loading matrix
     B = hcat(B_trends, B_idio_cycles, B_common_cycles);
-    coordinates_free_params_B = B .!= 1.0;
+    coordinates_free_params_B = B .> 1.0;
 
     # Setup covariance matrix measurement error
     R = ε*I;
@@ -43,15 +43,15 @@ function initial_sspace_structure(
 
     # Setup covariance matrix of the states' innovation
     # NOTE: all diagonal elements are estimated during the initialisation
-    Q = Symmatric(Matrix(I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
+    Q = Symmetric(Matrix(I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
 
     # Setup selection matrix D for the trends
     D_trends_template = [1.0; 0.0];
     D_trends = cat(dims=[1,2], [D_trends_template for i in 1:estim.n_trends]...);
 
     # Setup selection matrix D for idiosyncratic cycles
-    D_idio_cycles = Matrix(I, n_series_in_data, n_series_in_data);
-
+    D_idio_cycles = 1.0*Matrix(I, n_series_in_data, n_series_in_data);
+    
     # Setup selection matrix D for the common cycles
     D_common_cycles_template = zeros(estim.lags);
     D_common_cycles_template[1] = 1.0;
