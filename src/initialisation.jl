@@ -1,69 +1,33 @@
 """
-    update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    update_sspace_B_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+
+Update free coordinates in `sspace.B` from `params`.
+"""
+function update_sspace_B_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+    sspace.B[coordinates_free_params_B] .= params[1:sum(coordinates_free_params_B)];
+end
+
+"""
+    update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
 Update `sspace.Q` from `params`.
-
-# Notes on the parameters
-
-When is_llt == false:
-- sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-When is_llt == true:
-- sigma_{drift}^2
-- sigma_{trend}^2 / sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
 """
-function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
-    sspace.Q[1, 1] = params[1];
-    sspace.Q[2, 2] = params[1]*params[2];
-    if is_llt
-        sspace.Q[3, 3] = params[1]*params[3];
-    end
+function update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+    sspace.Q.data[I] .= params[sum(coordinates_free_params_B)+1:end];
 end
 
 """
-    update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
-Update `sspace.C` from `params`.
-
-# Notes on the parameters
-
-When is_llt == false:
-- sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-When is_llt == true:
-- sigma_{drift}^2
-- sigma_{trend}^2 / sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
+Update `sspace.DQD` and the free entries of `sspace.P0` from `params`.
 """
-function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)    
-    sspace.C[3, 3:end] = params[3+is_llt:end];
-end
-
-"""
-    update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
-
-Update `sspace.DQD` and `sspace.P0` from `params`.
-"""
-function update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
+function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
 
-    # Update `sspace.P0`
-    C_cycle = sspace.C[3:end, 3:end];
-    DQD_cycle = Symmetric(sspace.DQD[3:end, 3:end]);
-    sspace.P0.data[3:end, 3:end] = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
+    # Update the free entries in `sspace.P0`
+    sspace.P0.data[coordinates_free_params_P0] = solve_discrete_lyapunov(sspace.C, sspace.DQD).data[coordinates_free_params_P0];
 end
 
 """
@@ -75,40 +39,36 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 
     # Update sspace accordingly
     update_sspace_B_from_params!(constrained_params, coordinates_free_params_B, sspace);
-    update_sspace_Q_from_params!(constrained_params, coordinates_free_params_Q, sspace);
-    update_sspace_P0_from_params!(constrained_params, coordinates_free_params_P0, sspace);
-    
+    update_sspace_Q_from_params!(constrained_params, coordinates_free_params_B, sspace);
+
     # Determine whether Q is problematic
     if (sum(isnan.(sspace.Q)) == 0) && (sum(isinf.(sspace.Q)) == 0)
         is_Q_non_problematic = true;
+        update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
     else
         is_Q_non_problematic = false;
     end
-
+    
     # Determine whether P0 is problematic
     if (sum(isnan.(sspace.P0)) == 0) && (sum(isinf.(sspace.P0)) == 0)
         is_P0_non_problematic = minimum(abs.(eigvals(sspace.P0))) >= 1e-8;
     else
         is_P0_non_problematic = false;
     end
-
+    
     # Regular run
     if is_Q_non_problematic && is_P0_non_problematic
         
-        # Update initial conditions
-        update_sspace_DQD_and_P0_from_params!(sspace);
-
         # Run kalman filter and return -loglik
         try            
             status = kfilter_full_sample(sspace);
             return -status.loglik;
-
+        
         # Problematic run
         catch kf_run_error
             if isa(kf_run_error, DomainError)
                 return 1/eps();
             else
-                println("B")
                 throw(kf_run_error);
             end
         end
