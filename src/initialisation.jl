@@ -26,6 +26,16 @@ function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMa
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
 
+    # Find first cycle
+    coordinates_first_cycle = findfirst(coordinates_free_params_P0);
+    println(coordinates_first_cycle);
+    println(findall(sspace.B[1,:] .== 1)[2])
+    error("AAA");
+
+    # Idio cycles
+    
+    # Common cycles
+
     # Update the free entries in `sspace.P0`
     sspace.P0.data[coordinates_free_params_P0] = solve_discrete_lyapunov(sspace.C, sspace.DQD).data[coordinates_free_params_P0];
 end
@@ -182,6 +192,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     X0 = vcat(X0_trends, X0_idio_cycles, X0_common_cycles);
     P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_idio_cycles, P0_common_cycles));
     coordinates_free_params_P0 = P0 .!= 0.0;
+    coordinates_free_params_P0[1:estim.n_trends, 1:estim.n_trends] .= false;
 
     # Return state-space matrices and relevant coordinates
     return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0;
