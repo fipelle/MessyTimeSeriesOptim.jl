@@ -67,23 +67,17 @@ function update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
 end
 
 """
-    fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 
-Return -1 times the log-likelihood function (or a large number if the cycle is not causal).
+Return -1 times the log-likelihood function (or a large number in case of numerical problems).
 """
-function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings)
 
     # Update sspace accordingly
-    update_sspace_Q_from_params!(constrained_params, is_llt, sspace);
-    update_sspace_C_from_params!(constrained_params, is_llt, sspace);
-
-    # Determine whether the cycle is problematic
-    if (sum(isnan.(sspace.C)) == 0) && (sum(isinf.(sspace.C)) == 0)
-        is_cycle_non_problematic = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
-    else
-        is_cycle_non_problematic = false;
-    end
-
+    update_sspace_B_from_params!(constrained_params, coordinates_free_params_B, sspace);
+    update_sspace_Q_from_params!(constrained_params, coordinates_free_params_Q, sspace);
+    update_sspace_P0_from_params!(constrained_params, coordinates_free_params_P0, sspace);
+    
     # Determine whether Q is problematic
     if (sum(isnan.(sspace.Q)) == 0) && (sum(isinf.(sspace.Q)) == 0)
         is_Q_non_problematic = true;
@@ -99,7 +93,7 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
     end
 
     # Regular run
-    if is_cycle_non_problematic && is_Q_non_problematic && is_P0_non_problematic
+    if is_Q_non_problematic && is_P0_non_problematic
         
         # Update initial conditions
         update_sspace_DQD_and_P0_from_params!(sspace);
@@ -357,7 +351,6 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
 
     # Setup transition matrix
     C = cat(dims=[1,2], C_trends, C_idio_cycles, C_common_cycles);
-    coordinates_free_params_C = (C .!= 0.1) .& (C .!= 1.0) .& (C .!= 0.0);
 
     # Setup covariance matrix of the states' innovation
     # NOTE: all diagonal elements are estimated during the initialisation
@@ -411,7 +404,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     coordinates_free_params_P0 = P0 .!= 0.0;
 
     # Return state-space matrices and relevant coordinates
-    return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_C, coordinates_free_params_P0;
+    return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0;
 end
 
 """
@@ -441,8 +434,13 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
 
     # Get initial state-space parameters and relevant coordinates
-    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_C, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
-    
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
+
+    # Set KalmanSettings
+    sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
+
+
+
     # Return output
     return common_trends, trends_variance, detrended_data;
 end
