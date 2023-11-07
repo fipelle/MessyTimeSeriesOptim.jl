@@ -76,4 +76,22 @@ function initial_sspace_structure(
         X0_trends[i] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
         P0_trends.data[i, i] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
     end
+
+    # Setup initial conditions for the idiosyncratic cycles
+    X0_idio_cycles = zeros(n_series_in_data);
+    DQD_idio_cycles = Symmetric(1.0*Matrix(I, n_series_in_data, n_series_in_data))
+    P0_idio_cycles = solve_discrete_lyapunov(C_idio_cycles, DQD_idio_cycles).data;
+
+    # Setup initial conditions for the common cycles
+    X0_common_cycles = zeros(estim.n_cycles);
+    DQD_common_cycles = Symmetric(D_common_cycles * Matrix(1.0I, estim.n_cycles, estim.n_cycles) * D_common_cycles');
+    P0_common_cycles = solve_discrete_lyapunov(C_common_cycles, DQD_common_cycles).data;
+
+    # Setup initial conditions
+    X0 = vcat(X0_trends, X0_idio_cycles, X0_common_cycles);
+    P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_idio_cycles, P0_common_cycles));
+    coordinates_free_params_P0 = P0 .!= 0.0;
+
+    # Return state-space matrices and relevant coordinates
+    return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_C, coordinates_free_params_P0;
 end
