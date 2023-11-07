@@ -192,8 +192,8 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     X0 = vcat(X0_trends, X0_idio_cycles, X0_common_cycles);
     P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_idio_cycles, P0_common_cycles));
     coordinates_free_params_P0 = P0 .!= 0.0;
-    coordinates_free_params_P0[1:estim.n_trends, 1:estim.n_trends] .= false;
-
+    coordinates_free_params_P0[1:2*estim.n_trends, 1:2*estim.n_trends] .= false;
+    
     # Return state-space matrices and relevant coordinates
     return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0;
 end
