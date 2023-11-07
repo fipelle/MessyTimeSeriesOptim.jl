@@ -13,7 +13,7 @@ end
 Update `sspace.Q` from `params`.
 """
 function update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
-    sspace.Q.data[I] .= params[sum(coordinates_free_params_B)+1:end];
+    sspace.Q.data[diagind(sspace.Q.data)] .= params[sum(coordinates_free_params_B)+1:end];
 end
 
 """
@@ -172,7 +172,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     X0_idio_cycles = zeros(n_series_in_data);
     DQD_idio_cycles = Symmetric(Matrix(1.0I, n_series_in_data, n_series_in_data))
     P0_idio_cycles = solve_discrete_lyapunov(C_idio_cycles, DQD_idio_cycles).data;
-    
+
     # Setup initial conditions for the common cycles
     X0_common_cycles = zeros(estim.n_cycles);
     DQD_common_cycles = Symmetric(D_common_cycles * Matrix(1.0I, estim.n_cycles, estim.n_cycles) * D_common_cycles');
