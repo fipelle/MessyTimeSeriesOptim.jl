@@ -31,8 +31,8 @@ function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMa
     
     # C and DQD referring to cycles
     C_cycles = sspace.C[coordinates_first_cycle:end, coordinates_first_cycle:end];
-    DQD_cycles = sspace.DQD[coordinates_first_cycle:end, coordinates_first_cycle:end];
-
+    DQD_cycles = Symmetric(sspace.DQD[coordinates_first_cycle:end, coordinates_first_cycle:end]);
+    
     # Update the free entries in `sspace.P0`
     sspace.P0.data[coordinates_free_params_P0] = solve_discrete_lyapunov(C_cycles, DQD_cycles).data[coordinates_free_params_P0];
 end
