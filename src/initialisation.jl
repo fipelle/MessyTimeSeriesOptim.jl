@@ -116,7 +116,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     coordinates_free_params_B = B .> 1.0;
 
     # Setup covariance matrix measurement error
-    R = ε*I;
+    R = 1e-4*I;
 
     # Setup transition matrix for the trends (common and idiosyncratic)
     C_trends_template = [2.0 -1.0; 1.0 0.0];
