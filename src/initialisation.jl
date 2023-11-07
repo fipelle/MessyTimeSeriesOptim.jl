@@ -102,7 +102,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     B_trends = kron(estim.trends_skeleton, [1.0 0.0]);
 
     # Setup loadings structure for the idiosyncratic cycles
-    B_idio_cycles = 1.0*Matrix(I, n_series_in_data, n_series_in_data);
+    B_idio_cycles = Matrix(1.0I, n_series_in_data, n_series_in_data);
 
     # Setup loading structure for the cycles, employing the relevant identification scheme
     B_common_cycles = kron(estim.cycles_skeleton, ones(1, estim.lags));
@@ -123,7 +123,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     C_trends = cat(dims=[1,2], [C_trends_template for i in 1:estim.n_trends]...);
 
     # Setup transition matrix for the idiosyncratic cycles
-    C_idio_cycles = 0.1*Matrix(I, n_series_in_data, n_series_in_data);
+    C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
 
     # Setup transition matrix for the common cycles
     C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
@@ -134,14 +134,14 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
 
     # Setup covariance matrix of the states' innovation
     # NOTE: all diagonal elements are estimated during the initialisation
-    Q = Symmetric(Matrix(I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
+    Q = Symmetric(Matrix(1.0I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
 
     # Setup selection matrix D for the trends
     D_trends_template = [1.0; 0.0];
     D_trends = cat(dims=[1,2], [D_trends_template for i in 1:estim.n_trends]...);
 
     # Setup selection matrix D for idiosyncratic cycles
-    D_idio_cycles = 1.0*Matrix(I, n_series_in_data, n_series_in_data);
+    D_idio_cycles = Matrix(1.0I, n_series_in_data, n_series_in_data);
 
     # Setup selection matrix D for the common cycles
     D_common_cycles_template = zeros(estim.lags);
@@ -170,9 +170,9 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
 
     # Setup initial conditions for the idiosyncratic cycles
     X0_idio_cycles = zeros(n_series_in_data);
-    DQD_idio_cycles = Symmetric(1.0*Matrix(I, n_series_in_data, n_series_in_data))
+    DQD_idio_cycles = Symmetric(Matrix(1.0I, n_series_in_data, n_series_in_data))
     P0_idio_cycles = solve_discrete_lyapunov(C_idio_cycles, DQD_idio_cycles).data;
-
+    
     # Setup initial conditions for the common cycles
     X0_common_cycles = zeros(estim.n_cycles);
     DQD_common_cycles = Symmetric(D_common_cycles * Matrix(1.0I, estim.n_cycles, estim.n_cycles) * D_common_cycles');
