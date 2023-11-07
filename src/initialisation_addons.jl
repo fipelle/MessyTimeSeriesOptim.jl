@@ -1,7 +1,11 @@
-function initial_sspace_structure(
-    data::Union{FloatMatrix, JMatrix{Float64}},
-    estim::EstimSettings
-)
+"""
+    initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
+
+Get initial state-space parameters and relevant coordinates. 
+
+Trends are modelled using the Kitagawa representation.
+"""
+function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
 
     # `n` for initialisation (it may differ from the one in `estim`)
     n_series_in_data = size(data, 1);

@@ -313,13 +313,115 @@ function initial_univariate_decomposition_llt(data::Union{FloatVector, JVector{F
 end
 
 """
-    initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; use_llt::Bool=false)
+    initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
+
+Get initial state-space parameters and relevant coordinates. 
+
+Trends are modelled using the Kitagawa representation.
+"""
+function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
+
+    # `n` for initialisation (it may differ from the one in `estim`)
+    n_series_in_data = size(data, 1);
+
+    # Setup loading structure for the trends (common and idiosyncratic)
+    B_trends = kron(estim.trends_skeleton, [1.0 0.0]);
+
+    # Setup loadings structure for the idiosyncratic cycles
+    B_idio_cycles = 1.0*Matrix(I, n_series_in_data, n_series_in_data);
+
+    # Setup loading structure for the cycles, employing the relevant identification scheme
+    B_common_cycles = kron(estim.cycles_skeleton, ones(1, estim.lags));
+    B_common_cycles[1, :] .= 0.0;
+    for i in [1+(i-1)*estim.lags for i in 1:estim.n_cycles]
+        B_common_cycles[1, i] = 1.0;
+    end
+
+    # Setup loading matrix
+    B = hcat(B_trends, B_idio_cycles, B_common_cycles);
+    coordinates_free_params_B = B .> 1.0;
+
+    # Setup covariance matrix measurement error
+    R = ε*I;
+
+    # Setup transition matrix for the trends (common and idiosyncratic)
+    C_trends_template = [2.0 -1.0; 1.0 0.0];
+    C_trends = cat(dims=[1,2], [C_trends_template for i in 1:estim.n_trends]...);
+
+    # Setup transition matrix for the idiosyncratic cycles
+    C_idio_cycles = 0.1*Matrix(I, n_series_in_data, n_series_in_data);
+
+    # Setup transition matrix for the common cycles
+    C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
+    C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
+
+    # Setup transition matrix
+    C = cat(dims=[1,2], C_trends, C_idio_cycles, C_common_cycles);
+    coordinates_free_params_C = (C .!= 0.1) .& (C .!= 1.0) .& (C .!= 0.0);
+
+    # Setup covariance matrix of the states' innovation
+    # NOTE: all diagonal elements are estimated during the initialisation
+    Q = Symmetric(Matrix(I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
+
+    # Setup selection matrix D for the trends
+    D_trends_template = [1.0; 0.0];
+    D_trends = cat(dims=[1,2], [D_trends_template for i in 1:estim.n_trends]...);
+
+    # Setup selection matrix D for idiosyncratic cycles
+    D_idio_cycles = 1.0*Matrix(I, n_series_in_data, n_series_in_data);
+
+    # Setup selection matrix D for the common cycles
+    D_common_cycles_template = zeros(estim.lags);
+    D_common_cycles_template[1] = 1.0;
+    D_common_cycles = cat(dims=[1,2], [D_common_cycles_template for i in 1:estim.n_cycles]...);
+
+    # Setup selection matrix D
+    D = cat(dims=[1,2], D_trends, D_idio_cycles, D_common_cycles);
+
+    # Setup initial conditions for the trends
+    X0_trends = zeros(estim.n_trends);
+    P0_trends = Symmetric(zeros(estim.n_trends, estim.n_trends));
+
+    # Loop over the trends
+    for i=1:estim.n_trends
+        
+        # Get data in current trend
+        coordinates_data_in_trend = findall(view(estim.trends_skeleton, :, i) .!= 0);
+        data_in_trend = view(data, coordinates_data_in_trend, :);
+        first_data_in_trend = [first(skipmissing(view(data_in_trend, j, :))) for j in axes(data_in_trend, 1)]
+
+        # Initial conditions
+        X0_trends[i] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
+        P0_trends.data[i, i] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
+    end
+
+    # Setup initial conditions for the idiosyncratic cycles
+    X0_idio_cycles = zeros(n_series_in_data);
+    DQD_idio_cycles = Symmetric(1.0*Matrix(I, n_series_in_data, n_series_in_data))
+    P0_idio_cycles = solve_discrete_lyapunov(C_idio_cycles, DQD_idio_cycles).data;
+
+    # Setup initial conditions for the common cycles
+    X0_common_cycles = zeros(estim.n_cycles);
+    DQD_common_cycles = Symmetric(D_common_cycles * Matrix(1.0I, estim.n_cycles, estim.n_cycles) * D_common_cycles');
+    P0_common_cycles = solve_discrete_lyapunov(C_common_cycles, DQD_common_cycles).data;
+
+    # Setup initial conditions
+    X0 = vcat(X0_trends, X0_idio_cycles, X0_common_cycles);
+    P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_idio_cycles, P0_common_cycles));
+    coordinates_free_params_P0 = P0 .!= 0.0;
+
+    # Return state-space matrices and relevant coordinates
+    return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_C, coordinates_free_params_P0;
+end
+
+"""
+    initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
 
 Detrend each series in `Y_untrimmed` (nxT). Data can be a copy of `estim.Y`.
 
 Return initial common trends and detrended data (after having removed initial and ending missings).
 """
-function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; use_llt::Bool=false)
+function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
     
     # Error management
     if !(isdefined(estim, :drifts_selection) &
@@ -337,61 +439,10 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     first_ind = findfirst(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
     last_ind = findlast(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
     Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
-    n_trimmed, T_trimmed = size(Y_trimmed);
 
-    # Compute individual trends
-    trends = zeros(n_trimmed, T_trimmed);
-    cycles = zeros(n_trimmed, T_trimmed);
-    trends_variance = zeros(n_trimmed);
-
-    for i=1:n_trimmed
-        verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
-        drifts_selection_ids = findall(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
-        if length(drifts_selection_ids) > 0
-            drifts_selection_id = drifts_selection_ids[findmax(i -> estim.drifts_selection[i], drifts_selection_ids)[2]];
-            trends[i, :], cycles[i, :], minimizer_bounded = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
-            trends_variance[i] = minimizer_bounded[3];
-        else
-            cycles[i, :] .= Y_trimmed[i, :];
-        end
-    end
-
-    # Interpolated observables (NOTE: not detrended yet!)
-    detrended_data = trends+cycles;
+    # Get initial state-space parameters and relevant coordinates
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_C, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
     
-    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
-    common_trends = zeros(estim.n_trends, T_trimmed);
-    common_trends_variance = zeros(estim.n_trends);
-    
-    # Looping over each trend in `common_trends`
-    for i=1:estim.n_trends
-
-        # Determine which series to focus on
-        series_loading_on_current_trend = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
-        series_loading_on_further_trends = [findlast(view(estim.trends_skeleton, j, :) .!= 0.0) .> i for j in series_loading_on_current_trend];
-        
-        # Get selection of series onto which compute the current common trend
-        coordinates_current_block = series_loading_on_current_trend[.!series_loading_on_further_trends];
-
-        # Unadjusted estimate of the trend (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
-        common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
-        
-        # Unadjusted estimate of the variances per series
-        unadjusted_trends_variance = trends_variance[coordinates_current_block];
-        unadjusted_trends_variance ./= sum(estim.trends_skeleton[coordinates_current_block, :] .!= 0.0, dims=2)[:];
-
-        # Adjusted estimate of the initial variance for the common trend (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
-        common_trends_variance[i] = mean(unadjusted_trends_variance ./ estim.trends_skeleton[coordinates_current_block, i].^2);
-
-        # Update `trends`
-        for j in series_loading_on_current_trend
-            trends[j, :] .-= estim.trends_skeleton[j, i]*common_trends[i, :];
-        end
-    end
-    
-    # Compute detrended data
-    detrended_data .-= estim.trends_skeleton*common_trends;
-
     # Return output
     return common_trends, trends_variance, detrended_data;
 end
