@@ -1,18 +1,18 @@
 """
-    update_sspace_B_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+    update_sspace_B_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
 Update free coordinates in `sspace.B` from `params`.
 """
-function update_sspace_B_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
-    sspace.B[coordinates_free_params_B] .= params[1:sum(coordinates_free_params_B)];
+function update_sspace_B_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+    sspace.B[coordinates_free_params_B] .= constrained_params[1:sum(coordinates_free_params_B)];
 end
 
 """
-    update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+    update_sspace_Q_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
 Update `sspace.Q` from `params`.
 """
-function update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+function update_sspace_Q_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
     # Find relevant coordinates
     n_trends = (findall(sspace.B[1,:] .== 1)[2]-1)/2 |> Int64;
@@ -20,9 +20,9 @@ function update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_
     coordinates_first_common_cycle_in_Q = coordinates_first_idio_in_Q + size(sspace.B, 1);
     
     # Constraint some of the entries in Q_params
-    Q_params = params[sum(coordinates_free_params_B)+3:end];
-    insert!(Q_params, coordinates_first_idio_in_Q,         params[sum(coordinates_free_params_B)+1] * Q_params[1]);
-    insert!(Q_params, coordinates_first_common_cycle_in_Q, params[sum(coordinates_free_params_B)+2] * Q_params[1]);
+    Q_params = constrained_params[sum(coordinates_free_params_B)+3:end];
+    insert!(Q_params, coordinates_first_idio_in_Q,         constrained_params[sum(coordinates_free_params_B)+1] * Q_params[1]);
+    insert!(Q_params, coordinates_first_common_cycle_in_Q, constrained_params[sum(coordinates_free_params_B)+2] * Q_params[1]);
 
     # Update sspace.Q
     sspace.Q.data[diagind(sspace.Q.data)] .= Q_params;
@@ -35,8 +35,6 @@ Update `sspace.DQD` and the free entries of `sspace.P0` from `params`.
 """
 function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
-    @infiltrate
-    
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
 
@@ -89,7 +87,6 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings, coor
         
         # Problematic run
         catch kf_run_error
-            println("CCC")
             if isa(kf_run_error, DomainError)
                 return 1/eps();
             else
@@ -99,7 +96,6 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings, coor
     
     # Problematic run
     else
-        println("BBB")
         return 1/eps();
     end
 end
@@ -248,17 +244,16 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Initial guess for the parameters
     params_0 = ones(sum(coordinates_free_params_B)+size(Q, 1));
     params_0[sum(coordinates_free_params_B)+1:sum(coordinates_free_params_B)+2] .= 1e3;
-    params_lb = vcat(-100*ones(sum(coordinates_free_params_B)),     ones(2), 1e-4*ones(size(Q, 1)-2));
-    params_ub = vcat(+100*ones(sum(coordinates_free_params_B)), 1e4*ones(2), 1e4*ones(size(Q, 1)-2));
+    params_lb = vcat(-10*ones(sum(coordinates_free_params_B)),     ones(2), 1e-3*ones(size(Q, 1)-2));
+    params_ub = vcat(+10*ones(sum(coordinates_free_params_B)), 1e3*ones(2), 1e3*ones(size(Q, 1)-2));
     
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!);
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_BOBYQA(), abstol=0.0, reltol=1e-3);
+    res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.0, reltol=1e-3);
+    #res_optim = solve(prob, CMAEvolutionStrategyOpt(), abstol=1e-4);
     minimizer_bounded = res_optim.u;
-
-    # LN_SBPLX() best but slow
 
     # Update sspace accordingly
     update_sspace_B_from_params!(minimizer_bounded, coordinates_free_params_B, sspace);
@@ -271,5 +266,5 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     smoothed_states_matrix = hcat(smoothed_states...);
         
     # Return output
-    return smoothed_states_matrix;
+    return smoothed_states_matrix, sspace;
 end
