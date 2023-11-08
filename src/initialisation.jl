@@ -20,9 +20,9 @@ function update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_
     coordinates_first_common_cycle_in_Q = coordinates_first_idio_in_Q + size(sspace.B, 1);
     
     # Constraint some of the entries in Q_params
-    Q_params = params[sum(coordinates_free_params_B)+1:end];
-    Q_params[coordinates_first_idio_in_Q] = params[sum(coordinates_free_params_B)+1] * params[1];
-    Q_params[coordinates_first_common_cycle_in_Q] = params[sum(coordinates_free_params_B)+2] * params[1];
+    Q_params = params[sum(coordinates_free_params_B)+3:end];
+    insert!(Q_params, coordinates_first_idio_in_Q,         params[sum(coordinates_free_params_B)+1] * Q_params[1]);
+    insert!(Q_params, coordinates_first_common_cycle_in_Q, params[sum(coordinates_free_params_B)+2] * Q_params[1]);
 
     # Update sspace.Q
     sspace.Q.data[diagind(sspace.Q.data)] .= Q_params;
@@ -35,6 +35,8 @@ Update `sspace.DQD` and the free entries of `sspace.P0` from `params`.
 """
 function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
+    @infiltrate
+    
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
 
