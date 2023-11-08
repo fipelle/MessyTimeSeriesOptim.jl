@@ -28,14 +28,14 @@ function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMa
 
     # Find first cycle
     coordinates_first_cycle = findall(sspace.B[1,:] .== 1)[2];
-    
+
     # C and DQD referring to cycles
     C_cycles = sspace.C[coordinates_first_cycle:end, coordinates_first_cycle:end];
     DQD_cycles = Symmetric(sspace.DQD[coordinates_first_cycle:end, coordinates_first_cycle:end]);
-    
+    coordinates_free_params_P0_cycles = @view coordinates_free_params_P0[coordinates_first_cycle:end, coordinates_first_cycle:end];
+
     # Update the free entries in `sspace.P0`
-    sspace.P0.data[coordinates_first_cycle:end, coordinates_first_cycle:end] = solve_discrete_lyapunov(C_cycles, DQD_cycles).data;
-    sspace.P0.data[.!coordinates_free_params_P0] .= 0.0;
+    sspace.P0.data[coordinates_free_params_P0] = solve_discrete_lyapunov(C_cycles, DQD_cycles).data[coordinates_free_params_P0_cycles];
 end
 
 """
@@ -56,10 +56,10 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings, coor
     else
         is_Q_non_problematic = false;
     end
-    
+
     # Determine whether P0 is problematic
     if (sum(isnan.(sspace.P0)) == 0) && (sum(isinf.(sspace.P0)) == 0)
-        is_P0_non_problematic = minimum(abs.(eigvals(sspace.P0))) >= 1e-8;
+        is_P0_non_problematic = true;
     else
         is_P0_non_problematic = false;
     end
@@ -70,10 +70,12 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings, coor
         # Run kalman filter and return -loglik
         try            
             status = kfilter_full_sample(sspace);
+            println(-status.loglik)
             return -status.loglik;
         
         # Problematic run
         catch kf_run_error
+            println("CCC")
             if isa(kf_run_error, DomainError)
                 return 1/eps();
             else
@@ -83,6 +85,7 @@ function fmin!(constrained_params::Vector{Float64}, sspace::KalmanSettings, coor
     
     # Problematic run
     else
+        println("BBB")
         return 1/eps();
     end
 end
@@ -160,8 +163,8 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     D = cat(dims=[1,2], D_trends, D_idio_cycles, D_common_cycles);
 
     # Setup initial conditions for the trends
-    X0_trends = zeros(estim.n_trends);
-    P0_trends = Symmetric(zeros(estim.n_trends, estim.n_trends));
+    X0_trends = zeros(2*estim.n_trends);
+    P0_trends = Symmetric(zeros(2*estim.n_trends, 2*estim.n_trends));
 
     # Loop over the trends
     for i=1:estim.n_trends
@@ -172,8 +175,8 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
         first_data_in_trend = [first(skipmissing(view(data_in_trend, j, :))) for j in axes(data_in_trend, 1)]
 
         # Initial conditions
-        X0_trends[i] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
-        P0_trends.data[i, i] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
+        X0_trends[1+(i-1)*2] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
+        P0_trends.data[1+(i-1)*2, 1+(i-1)*2] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
     end
 
     # Setup initial conditions for the idiosyncratic cycles
@@ -182,7 +185,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     P0_idio_cycles = solve_discrete_lyapunov(C_idio_cycles, DQD_idio_cycles).data;
 
     # Setup initial conditions for the common cycles
-    X0_common_cycles = zeros(estim.n_cycles);
+    X0_common_cycles = zeros(estim.n_cycles*estim.lags);
     DQD_common_cycles = Symmetric(D_common_cycles * Matrix(1.0I, estim.n_cycles, estim.n_cycles) * D_common_cycles');
     P0_common_cycles = solve_discrete_lyapunov(C_common_cycles, DQD_common_cycles).data;
 
