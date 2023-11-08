@@ -1,7 +1,7 @@
 """
     update_sspace_B_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
-Update free coordinates in `sspace.B` from `params`.
+Update free coordinates in `sspace.B` from `constrained_params`.
 """
 function update_sspace_B_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
     sspace.B[coordinates_free_params_B] .= constrained_params[1:sum(coordinates_free_params_B)];
@@ -10,7 +10,7 @@ end
 """
     update_sspace_Q_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
-Update `sspace.Q` from `params`.
+Update `sspace.Q` from `constrained_params`.
 """
 function update_sspace_Q_from_params!(constrained_params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
@@ -31,7 +31,7 @@ end
 """
     update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
-Update `sspace.DQD` and the free entries of `sspace.P0` from `params`.
+Update `sspace.DQD` and the free entries of `sspace.P0`.
 """
 function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
