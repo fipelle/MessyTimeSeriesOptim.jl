@@ -13,7 +13,19 @@ end
 Update `sspace.Q` from `params`.
 """
 function update_sspace_Q_from_params!(params::Vector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
-    sspace.Q.data[diagind(sspace.Q.data)] .= params[sum(coordinates_free_params_B)+1:end];
+
+    # Find relevant coordinates
+    n_trends = (findall(sspace.B[1,:] .== 1)[2]-1)/2 |> Int64;
+    coordinates_first_idio_in_Q = n_trends + 1;
+    coordinates_first_common_cycle_in_Q = coordinates_first_idio_in_Q + size(sspace.B, 1);
+    
+    # Constraint some of the entries in Q_params
+    Q_params = params[sum(coordinates_free_params_B)+1:end];
+    Q_params[coordinates_first_idio_in_Q] = params[sum(coordinates_free_params_B)+1] * params[1];
+    Q_params[coordinates_first_common_cycle_in_Q] = params[sum(coordinates_free_params_B)+2] * params[1];
+
+    # Update sspace.Q
+    sspace.Q.data[diagind(sspace.Q.data)] .= Q_params;
 end
 
 """
@@ -232,18 +244,19 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
     # Initial guess for the parameters
-    params_0  = ones(sum(coordinates_free_params_B)+size(Q, 1));
-    params_lb = params_0/1000
-    params_ub = params_0*1000
+    params_0 = ones(sum(coordinates_free_params_B)+size(Q, 1));
+    params_0[sum(coordinates_free_params_B)+1:sum(coordinates_free_params_B)+2] .= 1e3;
+    params_lb = vcat(-100*ones(sum(coordinates_free_params_B)),     ones(2), 1e-4*ones(size(Q, 1)-2));
+    params_ub = vcat(+100*ones(sum(coordinates_free_params_B)), 1e4*ones(2), 1e4*ones(size(Q, 1)-2));
     
-    # Best derivative-free option from NLopt -> NLopt.LN_SBPLX()
-
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!);
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.0, reltol=1e-3);
+    res_optim = solve(prob, NLopt.LN_BOBYQA(), abstol=0.0, reltol=1e-3);
     minimizer_bounded = res_optim.u;
+
+    # LN_SBPLX() best but slow
 
     # Update sspace accordingly
     update_sspace_B_from_params!(minimizer_bounded, coordinates_free_params_B, sspace);
