@@ -272,7 +272,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff())
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, Optim.LBFGS()); #, abstol=0.1, reltol=0.1);
+    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-4, reltol=1e-2);
     #NLopt.LN_SBPLX()
     #res_optim = solve(prob, CMAEvolutionStrategyOpt(), abstol=1e-4);
     minimizer_bounded = res_optim.u;
