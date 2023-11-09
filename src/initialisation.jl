@@ -259,16 +259,21 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
     # Initial guess for the parameters
-    params_0 = vcat(zeros(sum(coordinates_free_params_B)), ones(size(Q, 1)));
-    params_0[sum(coordinates_free_params_B)+1:sum(coordinates_free_params_B)+1+n_trimmed] .= 10; # first common cycle plus all idio
-    params_lb = vcat(-100*ones(sum(coordinates_free_params_B)),     ones(1+n_trimmed), 1e-3*ones(size(Q, 1)-1-n_trimmed));
-    params_ub = vcat(+100*ones(sum(coordinates_free_params_B)), 1e3*ones(1+n_trimmed), 1e+3*ones(size(Q, 1)-1-n_trimmed));
+    params_0 = vcat(
+        [ifelse(i==1, ones(n_trimmed-j), zeros(n_trimmed-j)) for i=1:estim.lags for j=1:estim.n_cycles]...,
+        1e4*ones(1+n_trimmed),
+        1e-4*ones(estim.n_trends),
+        ones(size(Q, 1)-1-n_trimmed-estim.n_trends)
+    );
+    params_lb = vcat(-10*ones(sum(coordinates_free_params_B)), 1e+3*ones(1+n_trimmed), 1e-5*ones(size(Q, 1)-1-n_trimmed));
+    params_ub = vcat(+10*ones(sum(coordinates_free_params_B)), 1e+5*ones(1+n_trimmed), 1e+5*ones(size(Q, 1)-1-n_trimmed));
     
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
-    prob = OptimizationFunction(call_fmin!);
+    prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff())
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.1, reltol=0.1);
+    res_optim = solve(prob, Optim.LBFGS()); #, abstol=0.1, reltol=0.1);
+    #NLopt.LN_SBPLX()
     #res_optim = solve(prob, CMAEvolutionStrategyOpt(), abstol=1e-4);
     minimizer_bounded = res_optim.u;
 

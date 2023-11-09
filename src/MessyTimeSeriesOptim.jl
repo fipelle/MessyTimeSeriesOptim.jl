@@ -5,7 +5,7 @@ module MessyTimeSeriesOptim
 	# Libraries
 	using Dates, Distributed, Logging, LoopVectorization;
 	using Distributions, LinearAlgebra, SparseArrays, StableRNGs, Statistics;
-	using MessyTimeSeries, Optimization, OptimizationNOMAD, OptimizationNLopt;
+	using MessyTimeSeries, Optimization, OptimizationOptimJL, OptimizationNOMAD, OptimizationNLopt;
 	using Infiltrator;
 	
 	# Aliases for MessyTimeSeries
