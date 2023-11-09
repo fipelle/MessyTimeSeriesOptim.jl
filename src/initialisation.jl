@@ -16,7 +16,11 @@ function update_sspace_Q_from_params!(constrained_params::AbstractVector{Float64
 
     # Find relevant coordinates
     n_series = size(sspace.B, 1);
-    n_trends = (findall(sspace.B[1,:] .== 1)[2]-1)/2 |> Int64;
+    n_trends_ext = findall(sspace.B[1,:] .== 1)[2]-1;
+    n_trends = n_trends_ext/2 |> Int64;
+
+    # Trends dictionary
+    trends_dict = Dict(i=>j for (j, i) in enumerate(1:2:n_trends_ext));
 
     # Break down parameters
     params_ratios = constrained_params[sum(coordinates_free_params_B)+1:sum(coordinates_free_params_B)+1+n_series];
@@ -24,8 +28,12 @@ function update_sspace_Q_from_params!(constrained_params::AbstractVector{Float64
 
     # Ratios to variances
     params_ratios_as_variances = copy(params_ratios);
-    params_ratios_as_variances[end] *= params_variances[1];                  # first common cycle
-    params_ratios_as_variances[1:end-1] .*= params_ratios_as_variances[end]; # idio cycles
+    params_ratios_as_variances[end] *= params_variances[1]; # first common cycle
+    for i=1:length(params_ratios_as_variances)-1
+        coordinates_trends_in_B = findall(sspace.B[i, 1:n_trends_ext] .!= 0.0);   
+        coordinates_trends_in_params = getindex.(Ref(trends_dict), coordinates_trends_in_B);
+        params_ratios_as_variances[i] *= sum(view(params_variances, coordinates_trends_in_params)); # idio cycles
+    end
     
     # Merge variances
     merged_params_variances = vcat(params_variances[1:n_trends], params_ratios_as_variances, params_variances[n_trends+1:end]);
@@ -153,7 +161,7 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
 
     # Setup transition matrix for the common cycles
-    C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
+    C_common_cycles_template = companion_form([1.4 -0.5 zeros(1, estim.lags-2)], extended=false);
     C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
 
     # Setup transition matrix
@@ -191,10 +199,12 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
         first_data_in_trend = [first(skipmissing(view(data_in_trend, j, :))) for j in axes(data_in_trend, 1)]
 
         # Initial conditions
-        X0_trends[1+(i-1)*2] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
-        P0_trends.data[1+(i-1)*2, 1+(i-1)*2] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
+        for j=1:2
+            X0_trends[j+(i-1)*2] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
+            P0_trends.data[j+(i-1)*2, j+(i-1)*2] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
+        end
     end
-
+    
     # Setup initial conditions for the idiosyncratic cycles
     X0_idio_cycles = zeros(n_series_in_data);
     DQD_idio_cycles = Symmetric(Matrix(1.0I, n_series_in_data, n_series_in_data))
@@ -249,7 +259,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
     # Initial guess for the parameters
-    params_0 = ones(sum(coordinates_free_params_B) + size(Q, 1));
+    params_0 = vcat(zeros(sum(coordinates_free_params_B)), ones(size(Q, 1)));
     params_0[sum(coordinates_free_params_B)+1:sum(coordinates_free_params_B)+1+n_trimmed] .= 10; # first common cycle plus all idio
     params_lb = vcat(-100*ones(sum(coordinates_free_params_B)),     ones(1+n_trimmed), 1e-3*ones(size(Q, 1)-1-n_trimmed));
     params_ub = vcat(+100*ones(sum(coordinates_free_params_B)), 1e3*ones(1+n_trimmed), 1e+3*ones(size(Q, 1)-1-n_trimmed));
