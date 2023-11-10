@@ -249,19 +249,76 @@ function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSett
     # Initial guess for the parameters
     params_0 = vcat(
         1e4*ones(1+n_trimmed),
-        1e-4*ones(estim.n_trends),
+        1e-2*ones(estim.n_trends),
     );
     params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-4*ones(estim.n_trends));
-    params_ub = vcat(1e+6*ones(1+n_trimmed), 1e+4*ones(estim.n_trends));
+    params_ub = vcat(1e+6*ones(1+n_trimmed), ones(estim.n_trends));
     
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!)
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-4, reltol=1e-2);
+    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
     
     # Return minimizer
     return res_optim.u;
+end
+
+"""
+    initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
+
+Initialise current common cycle via PCA.
+"""
+function initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
+
+    # Convenient shortcuts
+    data_current_block = residual_data[coordinates_current_block, :];
+    data_current_block_standardised = standardise(data_current_block);
+
+    # Compute PCA loadings
+    eigen_val, eigen_vect = eigen(Symmetric(cov(data_current_block_standardised, dims=2)));
+    loadings = eigen_vect[:, sortperm(-abs.(eigen_val))[1]];
+
+    # Compute PCA factor
+    pc1 = permutedims(loadings)*data_current_block_standardised;
+
+    # Rescale PCA loadings to match the original scale
+    loadings .*= std(data_current_block, dims=2)[:];
+
+    # Rescale PC1 wrt the first series
+    pc1 .*= loadings[1];
+    loadings ./= loadings[1];
+
+    # Lag principal component
+    pc1_y, pc1_x = lag(pc1, estim.lags);
+
+    if estim.lags > 1
+
+        # Initialise complete loadings
+        complete_loadings = zeros(length(loadings), estim.lags);
+
+        # Regress one variable at the time on `pc1`
+        pc1_x_shifted_with_backcast = vcat(pc1_y, pc1_x[1:end-1, :]);
+        pc1_x_shifted = pc1_x_shifted_with_backcast[:, estim.lags+1:end];
+        for i in axes(data_current_block, 1)
+            if i == 1
+                complete_loadings[1, 1] = 1.0; # identification
+            else
+                data_current_block_yi, _ = lag(permutedims(data_current_block[i, :]), estim.lags);
+                complete_loadings[i, :] = data_current_block_yi*pc1_x_shifted'/Symmetric(pc1_x_shifted*pc1_x_shifted' + estim.Γ);
+            end
+        end
+
+        # Explained data
+        explained_data = complete_loadings*pc1_x_shifted_with_backcast;
+
+    else
+        complete_loadings = loadings;
+        explained_data = complete_loadings*pc1;
+    end
+
+    # Return output
+    return complete_loadings, explained_data;
 end
 
 """
@@ -306,8 +363,8 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Update `params_0`
     params_0 = vcat(B[coordinates_free_params_B], params_0);
     params_lb = vcat(B[coordinates_free_params_B]/10, 1e+2*ones(1+n_trimmed), 1e-4*ones(estim.n_trends));
-    params_ub = vcat(B[coordinates_free_params_B]*10, 1e+6*ones(1+n_trimmed), 1e+4*ones(estim.n_trends));
-        
+    params_ub = vcat(B[coordinates_free_params_B]*10, 1e+6*ones(1+n_trimmed), ones(estim.n_trends));
+    
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff())
