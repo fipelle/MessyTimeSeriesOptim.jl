@@ -249,9 +249,9 @@ function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSett
     # Initial guess for the parameters
     params_0 = vcat(
         1e+4*ones(1+n_trimmed),
-        1e-2*ones(estim.n_trends),
+        1e-3*ones(estim.n_trends),
     );
-    params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-4*ones(estim.n_trends));
+    params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
     params_ub = vcat(1e+6*ones(1+n_trimmed), ones(estim.n_trends));
     
     # Maximum likelihood
@@ -380,9 +380,9 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
 
     # Update `params_0`
     params_0 = vcat(B[coordinates_free_params_B], params_0);
-    params_lb = vcat(B[coordinates_free_params_B]/10, 1e+3*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
+    params_lb = vcat(B[coordinates_free_params_B]/10, 1e+2*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
     params_ub = vcat(B[coordinates_free_params_B]*10, 1e+6*ones(1+n_trimmed), ones(estim.n_trends));
-
+    
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff())
