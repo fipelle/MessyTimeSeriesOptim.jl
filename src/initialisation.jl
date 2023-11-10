@@ -248,10 +248,10 @@ function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSett
 
     # Initial guess for the parameters
     params_0 = vcat(
-        1e3*ones(1+n_trimmed),
-        1e-3*ones(estim.n_trends),
+        1e+4*ones(1+n_trimmed),
+        1e-2*ones(estim.n_trends),
     );
-    params_lb = vcat(1e+3*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
+    params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-4*ones(estim.n_trends));
     params_ub = vcat(1e+6*ones(1+n_trimmed), ones(estim.n_trends));
     
     # Maximum likelihood
@@ -259,9 +259,27 @@ function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSett
     prob = OptimizationFunction(call_fmin!)
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
     res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
+
+    # Update `sspace` from `res_optim`
+    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
+    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
+
+    # Recover smoothed states
+    status = kfilter_full_sample(sspace);
+    smoothed_states_container, _ = ksmoother(sspace, status);
+    smoothed_states = hcat(smoothed_states_container...);
     
+    # Recover smoothed cycles
+    smoothed_cycles = smoothed_states[2*estim.n_trends+1:2*estim.n_trends+n_trimmed, :];
+    for i=1:n_trimmed
+        last_state_for_ith_series = findlast(B[i, :] .== 1.0);
+        if last_state_for_ith_series > 2*estim.n_trends+n_trimmed
+            smoothed_cycles[i, :] .+= smoothed_states[last_state_for_ith_series, :];
+        end
+    end
+
     # Return minimizer
-    return res_optim.u;
+    return res_optim.u, smoothed_states, smoothed_cycles;
 end
 
 """
@@ -364,7 +382,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     params_0 = vcat(B[coordinates_free_params_B], params_0);
     params_lb = vcat(B[coordinates_free_params_B]/10, 1e+3*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
     params_ub = vcat(B[coordinates_free_params_B]*10, 1e+6*ones(1+n_trimmed), ones(estim.n_trends));
-    
+
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff())
