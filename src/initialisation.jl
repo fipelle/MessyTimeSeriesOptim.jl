@@ -234,6 +234,37 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
 end
 
 """
+    initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
+
+Run first step of the initialisation to find reasonable initial guesses.
+"""
+function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
+    
+    # Get initial state-space parameters and relevant coordinates
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim, first_step=true);
+    
+    # Set KalmanSettings
+    sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
+
+    # Initial guess for the parameters
+    params_0 = vcat(
+        1e4*ones(1+n_trimmed),
+        1e-4*ones(estim.n_trends),
+    );
+    params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-4*ones(estim.n_trends));
+    params_ub = vcat(1e+6*ones(1+n_trimmed), 1e+4*ones(estim.n_trends));
+    
+    # Maximum likelihood
+    tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
+    prob = OptimizationFunction(call_fmin!)
+    prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
+    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-4, reltol=1e-2);
+    
+    # Return minimizer
+    return res_optim.u;
+end
+
+"""
     initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
 
 Detrend each series in `Y_untrimmed` (nxT). Data can be a copy of `estim.Y`.
@@ -266,16 +297,17 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
-    # Initial guess for the parameters
-    params_0 = vcat(
-        [ifelse(i==1, ones(n_trimmed-j), zeros(n_trimmed-j)) for i=1:estim.lags for j=1:estim.n_cycles]...,
-        1e4*ones(1+n_trimmed),
-        1e-4*ones(estim.n_trends),
-        ones(size(Q, 1)-1-n_trimmed-estim.n_trends)
-    );
-    params_lb = vcat(-10*ones(sum(coordinates_free_params_B)), 1e+3*ones(1+n_trimmed), 1e-5*ones(size(Q, 1)-1-n_trimmed));
-    params_ub = vcat(+10*ones(sum(coordinates_free_params_B)), 1e+5*ones(1+n_trimmed), 1e+5*ones(size(Q, 1)-1-n_trimmed));
-    
+    # Recover initial guess from step 1
+    params_0 = initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
+
+    # TBA PCA
+    # -> loading matrix in the correct position within `B`
+
+    # Update `params_0`
+    params_0 = vcat(B[coordinates_free_params_B], params_0);
+    params_lb = vcat(B[coordinates_free_params_B]/10, 1e+2*ones(1+n_trimmed), 1e-4*ones(estim.n_trends));
+    params_ub = vcat(B[coordinates_free_params_B]*10, 1e+6*ones(1+n_trimmed), 1e+4*ones(estim.n_trends));
+        
     # Maximum likelihood
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff())
