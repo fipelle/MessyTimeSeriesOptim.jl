@@ -122,13 +122,13 @@ APIs to call `fmin!` with Tuple parameters.
 call_fmin!(constrained_params::AbstractVector{Float64}, tuple_fmin_args::Tuple) = fmin!(constrained_params, tuple_fmin_args...);
 
 """
-    initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
+    initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; first_step::Bool=false)
 
 Get initial state-space parameters and relevant coordinates. 
 
 Trends are modelled using the Kitagawa representation.
 """
-function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
+function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; first_step::Bool=false)
 
     # `n` for initialisation (it may differ from the one in `estim`)
     n_series_in_data = size(data, 1);
@@ -146,6 +146,10 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
         B_common_cycles[1, i] = 1.0;
     end
 
+    if first_step
+        B_common_cycles[B_common_cycles .!= 1.0] .= 0.0; # no common cycles
+    end
+
     # Setup loading matrix
     B = hcat(B_trends, B_idio_cycles, B_common_cycles);
     coordinates_free_params_B = B .> 1.0;
@@ -159,9 +163,13 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
 
     # Setup transition matrix for the idiosyncratic cycles
     C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
-
+    if first_step
+        C_idio_cycles[1, 1] = 0.0;                  # set to noise
+        C_idio_cycles[C_idio_cycles .== 0.1] .*= 9; # set to persistent cycles (as persistent as the common cycles)
+    end
+    
     # Setup transition matrix for the common cycles
-    C_common_cycles_template = companion_form([1.4 -0.5 zeros(1, estim.lags-2)], extended=false);
+    C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
     C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
 
     # Setup transition matrix
