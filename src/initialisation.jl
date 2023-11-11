@@ -307,11 +307,27 @@ function initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatri
     pc1 .*= loadings[1];
     loadings ./= loadings[1];
 
-    # Lag principal component
-    pc1_y, pc1_x = lag(pc1, estim.lags);
-
     if estim.lags > 1
 
+        # Backcast `pc1` first
+
+        # Reverse `pc1` time order to predict the past (i.e., backcast)
+        pc1_reversed = reverse(pc1);
+
+        # Estimate ridge backcast coefficients
+        pc1_reversed_y, pc1_reversed_x = lag(pc1_reversed, estim.lags);
+        ar_coeff_backcast = pc1_reversed_y*pc1_reversed_x'/Symmetric(pc1_reversed_x*pc1_reversed_x' + estim.Γ);
+        MessyTimeSeriesOptim.enforce_causality_and_invertibility!(ar_coeff_backcast);
+
+        # Generate backcast for `pc1`
+        for t=1:estim.lags
+            backcast_x = pc1[1:estim.lags];
+            pc1 = hcat(ar_coeff_backcast*backcast_x, pc1);
+        end
+
+        # Lag principal component
+        pc1_y, pc1_x = lag(pc1, estim.lags);
+        
         # Initialise complete loadings
         complete_loadings = zeros(length(loadings), estim.lags);
 
