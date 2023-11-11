@@ -382,17 +382,41 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
     n_trimmed = size(Y_trimmed, 1);
 
-    # Get initial state-space parameters and relevant coordinates
-    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
+    # Recover initial guess from step 1
+    println("Initialisation > running step 1")
+    params_0, _, smoothed_cycles_0 = MessyTimeSeriesOptim.initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
 
+    # Get initial state-space parameters and relevant coordinates
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = MessyTimeSeriesOptim.initial_sspace_structure(Y_trimmed, estim);
+
+    # Determine which series can load on each cycle
+    boolean_coordinates_blocks = (estim.cycles_skeleton .!= 0) .| estim.cycles_free_params;
+    coordinates_blocks = [findall(boolean_coordinates_blocks[:, i]) for i=1:estim.n_cycles];
+
+    # Initialise common cycles iteratively via PCA
+    residual_data = copy(smoothed_cycles_0);
+
+    # Loop over common cycles
+    for i=1:estim.n_cycles
+
+        # Pointers
+        coordinates_current_block = coordinates_blocks[i];
+
+        # Loadings for the i-th common cycle
+        complete_loadings, explained_data = MessyTimeSeriesOptim.initialise_common_cycle(estim, residual_data, coordinates_current_block);
+        
+        # Position of the i-th common cycle in the state-space representation
+        coordinates_pc1 = 1 + (i-1)*estim.lags + 2*estim.n_trends + n_trimmed;
+
+        # Position `complete_loadings` in `B`
+        B[:, coordinates_pc1:coordinates_pc1+estim.lags-1] = complete_loadings;
+
+        # Recompute residual data
+        residual_data[coordinates_current_block, :] .-= explained_data;
+    end
+    
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
-
-    # Recover initial guess from step 1
-    params_0 = initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
-
-    # TBA PCA
-    # -> loading matrix in the correct position within `B`
 
     # Update `params_0`
     params_0 = vcat(B[coordinates_free_params_B], params_0);
@@ -400,24 +424,22 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     params_ub = vcat(B[coordinates_free_params_B]*10, 1e+6*ones(1+n_trimmed), ones(estim.n_trends));
     
     # Maximum likelihood
+    println("Initialisation > running step 2")
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
-    prob = OptimizationFunction(call_fmin!, Optimization.AutoForwardDiff())
+    prob = OptimizationFunction(call_fmin!)
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-4, reltol=1e-2);
-    #NLopt.LN_SBPLX()
-    #res_optim = solve(prob, CMAEvolutionStrategyOpt(), abstol=1e-4);
-    minimizer_bounded = res_optim.u;
+    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
 
     # Update sspace accordingly
-    update_sspace_B_from_params!(minimizer_bounded, coordinates_free_params_B, sspace);
-    update_sspace_Q_from_params!(minimizer_bounded, coordinates_free_params_B, sspace);
+    update_sspace_B_from_params!(res_optim.u, coordinates_free_params_B, sspace);
+    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
     update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
-    
-    # Retrieve optimal states
+
+    # Recover smoothed states
     status = kfilter_full_sample(sspace);
-    smoothed_states, _ = ksmoother(sspace, status);
-    smoothed_states_matrix = hcat(smoothed_states...);
-        
+    smoothed_states_container, _ = ksmoother(sspace, status);
+    smoothed_states = hcat(smoothed_states_container...);
+
     # Return output
-    return smoothed_states_matrix, sspace;
+    return smoothed_states, sspace;
 end
