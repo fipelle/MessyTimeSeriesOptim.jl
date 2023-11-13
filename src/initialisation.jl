@@ -389,6 +389,9 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Get initial state-space parameters and relevant coordinates
     B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = MessyTimeSeriesOptim.initial_sspace_structure(Y_trimmed, estim);
 
+    # Set `coordinates_free_params_B` to `false`
+    coordinates_free_params_B .= false;
+
     # Determine which series can load on each cycle
     boolean_coordinates_blocks = (estim.cycles_skeleton .!= 0) .| estim.cycles_free_params;
     coordinates_blocks = [findall(boolean_coordinates_blocks[:, i]) for i=1:estim.n_cycles];
@@ -418,15 +421,9 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
-    # `B` lower and upper bounds
-    vec_B = B[coordinates_free_params_B];
-    vec_B_lb = [ifelse(vec_B[i] > 0, vec_B[i]/10, vec_B[i]*10) for i in axes(vec_B, 1)];
-    vec_B_ub = [ifelse(vec_B[i] > 0, vec_B[i]*10, vec_B[i]/10) for i in axes(vec_B, 1)];
-
     # Update `params_0`
-    params_0 = vcat(vec_B, params_0);
-    params_lb = vcat(vec_B_lb, 1e+2*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
-    params_ub = vcat(vec_B_ub, 1e+6*ones(1+n_trimmed), ones(estim.n_trends));
+    params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
+    params_ub = vcat(1e+6*ones(1+n_trimmed), ones(estim.n_trends));
     
     # Maximum likelihood
     println("Initialisation > running step 2")
