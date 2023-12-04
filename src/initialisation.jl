@@ -1,120 +1,108 @@
 """
-    update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    update_sspace_B_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
 
-Update `sspace.Q` from `params`.
-
-# Notes on the parameters
-
-When is_llt == false:
-- sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-When is_llt == true:
-- sigma_{drift}^2
-- sigma_{trend}^2 / sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
+Update free coordinates in `sspace.B` from `constrained_params`.
 """
-function update_sspace_Q_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
-    sspace.Q[1, 1] = params[1];
-    sspace.Q[2, 2] = params[1]*params[2];
-    if is_llt
-        sspace.Q[3, 3] = params[1]*params[3];
+function update_sspace_B_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+    sspace.B[coordinates_free_params_B] .= constrained_params[1:sum(coordinates_free_params_B)];
+end
+
+"""
+    update_sspace_Q_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+
+Update `sspace.Q` from `constrained_params`.
+"""
+function update_sspace_Q_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
+
+    # Find relevant coordinates
+    n_series = size(sspace.B, 1);
+    n_trends_ext = findall(sspace.B[1,:] .== 1)[2]-1;
+    n_trends = n_trends_ext/2 |> Int64;
+
+    # Trends dictionary
+    trends_dict = Dict(i=>j for (j, i) in enumerate(1:2:n_trends_ext));
+
+    # Break down parameters
+    params_ratios = constrained_params[sum(coordinates_free_params_B)+1:sum(coordinates_free_params_B)+1+n_series];
+    params_variances = constrained_params[sum(coordinates_free_params_B)+2+n_series:end];
+
+    # Ratios to variances
+    params_ratios_as_variances = copy(params_ratios);
+    params_ratios_as_variances[end] *= params_variances[1]; # first common cycle
+    for i=1:length(params_ratios_as_variances)-1
+        coordinates_trends_in_B = findall(sspace.B[i, 1:n_trends_ext] .!= 0.0);   
+        coordinates_trends_in_params = getindex.(Ref(trends_dict), coordinates_trends_in_B);
+        params_ratios_as_variances[i] *= sum(view(params_variances, coordinates_trends_in_params)); # idio cycles
     end
+    
+    # Merge variances
+    merged_params_variances = vcat(params_variances[1:n_trends], params_ratios_as_variances, params_variances[n_trends+1:end]);
+
+    # Update sspace.Q
+    sspace.Q.data[diagind(sspace.Q.data)] .= merged_params_variances;
 end
 
 """
-    update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
-Update `sspace.C` from `params`.
-
-# Notes on the parameters
-
-When is_llt == false:
-- sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-When is_llt == true:
-- sigma_{drift}^2
-- sigma_{trend}^2 / sigma_{drift}^2
-- sigma_{cycle}^2 / sigma_{drift}^2
-- AR(p) parameters
-
-In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
+Update `sspace.DQD` and the free entries of `sspace.P0`.
 """
-function update_sspace_C_from_params!(params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)    
-    sspace.C[3, 3:end] = params[3+is_llt:end];
-end
-
-"""
-    update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
-
-Update `sspace.DQD` and `sspace.P0` from `params`.
-"""
-function update_sspace_DQD_and_P0_from_params!(sspace::KalmanSettings)
+function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
 
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
 
-    # Update `sspace.P0`
-    C_cycle = sspace.C[3:end, 3:end];
-    DQD_cycle = Symmetric(sspace.DQD[3:end, 3:end]);
-    sspace.P0.data[3:end, 3:end] = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
+    # Find first cycle
+    coordinates_first_cycle = findall(sspace.B[1,:] .== 1)[2];
+
+    # C and DQD referring to cycles
+    C_cycles = sspace.C[coordinates_first_cycle:end, coordinates_first_cycle:end];
+    DQD_cycles = Symmetric(sspace.DQD[coordinates_first_cycle:end, coordinates_first_cycle:end]);
+    coordinates_free_params_P0_cycles = @view coordinates_free_params_P0[coordinates_first_cycle:end, coordinates_first_cycle:end];
+
+    # Update the free entries in `sspace.P0`
+    sspace.P0.data[coordinates_free_params_P0] = solve_discrete_lyapunov(C_cycles, DQD_cycles).data[coordinates_free_params_P0_cycles];
 end
 
 """
-    fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+    fmin!(constrained_params::AbstractVector{Float64}, sspace::KalmanSettings, coordinates_free_params_B::BitMatrix, coordinates_free_params_P0::BitMatrix)
 
-Return -1 times the log-likelihood function (or a large number if the cycle is not causal).
+Return -1 times the log-likelihood function (or a large number in case of numerical problems).
 """
-function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::KalmanSettings)
+function fmin!(constrained_params::AbstractVector{Float64}, sspace::KalmanSettings, coordinates_free_params_B::BitMatrix, coordinates_free_params_P0::BitMatrix)
 
     # Update sspace accordingly
-    update_sspace_Q_from_params!(constrained_params, is_llt, sspace);
-    update_sspace_C_from_params!(constrained_params, is_llt, sspace);
-
-    # Determine whether the cycle is problematic
-    if (sum(isnan.(sspace.C)) == 0) && (sum(isinf.(sspace.C)) == 0)
-        is_cycle_non_problematic = maximum(abs.(eigvals(sspace.C[3:end, 3:end]))) <= 0.98;
-    else
-        is_cycle_non_problematic = false;
-    end
+    update_sspace_B_from_params!(constrained_params, coordinates_free_params_B, sspace);
+    update_sspace_Q_from_params!(constrained_params, coordinates_free_params_B, sspace);
 
     # Determine whether Q is problematic
     if (sum(isnan.(sspace.Q)) == 0) && (sum(isinf.(sspace.Q)) == 0)
         is_Q_non_problematic = true;
+        update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
     else
         is_Q_non_problematic = false;
     end
 
     # Determine whether P0 is problematic
     if (sum(isnan.(sspace.P0)) == 0) && (sum(isinf.(sspace.P0)) == 0)
-        is_P0_non_problematic = minimum(abs.(eigvals(sspace.P0))) >= 1e-8;
+        is_P0_non_problematic = true;
     else
         is_P0_non_problematic = false;
     end
-
+    
     # Regular run
-    if is_cycle_non_problematic && is_Q_non_problematic && is_P0_non_problematic
+    if is_Q_non_problematic && is_P0_non_problematic
         
-        # Update initial conditions
-        update_sspace_DQD_and_P0_from_params!(sspace);
-
         # Run kalman filter and return -loglik
         try            
             status = kfilter_full_sample(sspace);
             return -status.loglik;
-
+        
         # Problematic run
         catch kf_run_error
             if isa(kf_run_error, DomainError)
                 return 1/eps();
             else
-                println("B")
                 throw(kf_run_error);
             end
         end
@@ -126,200 +114,260 @@ function fmin!(constrained_params::Vector{Float64}, is_llt::Bool, sspace::Kalman
 end
 
 """
-    call_fmin!(constrained_params::Vector{Float64}, tuple_fmin_args::Tuple)
+    call_fmin!(constrained_params::AbstractVector{Float64}, tuple_fmin_args::Tuple)
 
 APIs to call `fmin!` with Tuple parameters.
 """
-call_fmin!(constrained_params::Vector{Float64}, tuple_fmin_args::Tuple) = fmin!(constrained_params, tuple_fmin_args...);
+call_fmin!(constrained_params::AbstractVector{Float64}, tuple_fmin_args::Tuple) = fmin!(constrained_params, tuple_fmin_args...);
 
 """
-    call_reparametrised_fmin!(params::Vector{Float64}, tuple_args::Tuple)
+    initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; first_step::Bool=false)
 
-APIs to call `fmin!` after transforming the candidate parameters so that their support is unbounded.
+Get initial state-space parameters and relevant coordinates. 
+
+Trends are modelled using the Kitagawa representation.
 """
-function call_reparametrised_fmin!(params::Vector{Float64}, tuple_args::Tuple)
+function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; first_step::Bool=false)
 
-    params_lb = tuple_args[1];
-    params_ub = tuple_args[2];
-    tuple_fmin_args = tuple_args[3:end];
+    # `n` for initialisation (it may differ from the one in `estim`)
+    n_series_in_data = size(data, 1);
 
-    # Unconstrained -> constrained parameters
-    constrained_params = similar(params);
-    for i in axes(constrained_params, 1)
-        constrained_params[i] = get_bounded_logit(params[i], params_lb[i], params_ub[i]);
+    # Setup loading structure for the trends (common and idiosyncratic)
+    B_trends = kron(estim.trends_skeleton, [1.0 0.0]);
+
+    # Setup loadings structure for the idiosyncratic cycles
+    B_idio_cycles = Matrix(1.0I, n_series_in_data, n_series_in_data);
+
+    # Setup loading structure for the cycles, employing the relevant identification scheme
+    B_common_cycles = kron(estim.cycles_skeleton, ones(1, estim.lags));
+    B_common_cycles[1, :] .= 0.0;
+    for i in [1+(i-1)*estim.lags for i in 1:estim.n_cycles]
+        B_common_cycles[1, i] = 1.0;
     end
 
-    return call_fmin!(constrained_params, tuple_fmin_args);
+    if first_step
+        B_common_cycles[B_common_cycles .!= 1.0] .= 0.0; # no common cycles
+    end
+
+    # Setup loading matrix
+    B = hcat(B_trends, B_idio_cycles, B_common_cycles);
+    coordinates_free_params_B = B .> 1.0;
+
+    # Setup covariance matrix measurement error
+    R = 1e-4*I;
+
+    # Setup transition matrix for the trends (common and idiosyncratic)
+    C_trends_template = [2.0 -1.0; 1.0 0.0];
+    C_trends = cat(dims=[1,2], [C_trends_template for i in 1:estim.n_trends]...);
+
+    # Setup transition matrix for the idiosyncratic cycles
+    C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
+    if first_step
+        C_idio_cycles[1, 1] = 0.0;                    # set to noise
+        C_idio_cycles[C_idio_cycles .== 0.1] .*= 9.0; # set to persistent cycles (as persistent as the common cycles)
+    end
+    
+    # Setup transition matrix for the common cycles
+    C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
+    C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
+
+    # Setup transition matrix
+    C = cat(dims=[1,2], C_trends, C_idio_cycles, C_common_cycles);
+
+    # Setup covariance matrix of the states' innovation
+    # NOTE: all diagonal elements are estimated during the initialisation
+    Q = Symmetric(Matrix(1.0I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
+
+    # Setup selection matrix D for the trends
+    D_trends_template = [1.0; 0.0];
+    D_trends = cat(dims=[1,2], [D_trends_template for i in 1:estim.n_trends]...);
+
+    # Setup selection matrix D for idiosyncratic cycles
+    D_idio_cycles = Matrix(1.0I, n_series_in_data, n_series_in_data);
+
+    # Setup selection matrix D for the common cycles
+    D_common_cycles_template = zeros(estim.lags);
+    D_common_cycles_template[1] = 1.0;
+    D_common_cycles = cat(dims=[1,2], [D_common_cycles_template for i in 1:estim.n_cycles]...);
+
+    # Setup selection matrix D
+    D = cat(dims=[1,2], D_trends, D_idio_cycles, D_common_cycles);
+
+    # Setup initial conditions for the trends
+    X0_trends = zeros(2*estim.n_trends);
+    P0_trends = Symmetric(zeros(2*estim.n_trends, 2*estim.n_trends));
+
+    # Loop over the trends
+    for i=1:estim.n_trends
+        
+        # Get data in current trend
+        coordinates_data_in_trend = findall(view(estim.trends_skeleton, :, i) .!= 0);
+        data_in_trend = view(data, coordinates_data_in_trend, :);
+        first_data_in_trend = [first(skipmissing(view(data_in_trend, j, :))) for j in axes(data_in_trend, 1)]
+
+        # Initial conditions
+        for j=1:2
+            X0_trends[j+(i-1)*2] = mean(first_data_in_trend); # this allows for a weakly diffuse initialisation of the trend
+            P0_trends.data[j+(i-1)*2, j+(i-1)*2] = 10.0^floor(Int, 1+log10(mean(abs.(first_data_in_trend))));
+        end
+    end
+    
+    # Setup initial conditions for the idiosyncratic cycles
+    X0_idio_cycles = zeros(n_series_in_data);
+    DQD_idio_cycles = Symmetric(Matrix(1.0I, n_series_in_data, n_series_in_data))
+    P0_idio_cycles = solve_discrete_lyapunov(C_idio_cycles, DQD_idio_cycles).data;
+
+    # Setup initial conditions for the common cycles
+    X0_common_cycles = zeros(estim.n_cycles*estim.lags);
+    DQD_common_cycles = Symmetric(D_common_cycles * Matrix(1.0I, estim.n_cycles, estim.n_cycles) * D_common_cycles');
+    P0_common_cycles = solve_discrete_lyapunov(C_common_cycles, DQD_common_cycles).data;
+
+    # Setup initial conditions
+    X0 = vcat(X0_trends, X0_idio_cycles, X0_common_cycles);
+    P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_idio_cycles, P0_common_cycles));
+    coordinates_free_params_P0 = P0 .!= 0.0;
+    coordinates_free_params_P0[1:2*estim.n_trends, 1:2*estim.n_trends] .= false;
+
+    # Return state-space matrices and relevant coordinates
+    return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0;
 end
 
 """
-    initial_univariate_decomposition(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
+    initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
 
-This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
-
-# Note
-- If both `is_rw_trend` and `is_llt` are false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
+Run first step of the initialisation to find reasonable initial guesses.
 """
-function initial_univariate_decomposition(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool, is_llt::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
-
-    if is_rw_trend && is_llt
-        error("Either is_rw_trend or is_llt can be true");
-    end
-
-    # Measurement equation coefficients
-    B = [1.0 0.0 1.0 zeros(1, lags-1)];
-    R = ε*I;
-
-    # Drift-less random walk
-    if is_rw_trend
-        C_trend = [1.0 0.0; 1.0 0.0]; # this is not the most compressed representation, but simplifies the remaining part of this function without significantly compromising the run time
+function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
     
-    # Local linear trend or Kitagawa second order trend (special case of the local linear trend)
-    else
-        C_trend = [1.0 1.0; 0.0 1.0];
-    end
-
-    # Stationary dynamics
-    C = cat(dims=[1,2], C_trend, companion_form([0.9 zeros(1, lags-1)], extended=false));
-
-    # Remaining transition equation coefficients
-    D = zeros(2+lags, 2+is_llt);
-    
-    # Drift-less random walk
-    if is_rw_trend
-        D[1,1] = 1.0;
-        D[3,2] = 1.0;
-
-    # Local linear trend
-    elseif is_llt
-        D[1,1] = 1.0;
-        D[2,2] = 1.0;
-        D[3,3] = 1.0;
-
-    # Kitagawa second order trend (special case of the local linear trend)
-    else
-        D[2,1] = 1.0;
-        D[3,2] = 1.0;
-    end
-
-    # Covariance matrix of the transition innovations
-    Q = Symmetric(1.0*Matrix(I, 2+is_llt, 2+is_llt));
-
-    # Initial conditions (mean)
-    X0 = zeros(2+is_llt+lags);
-
-    # Initial conditions (covariance)
-    C_cycle = C[3:end, 3:end];
-    DQD_cycle = Symmetric(cat(dims=[1,2], Q[2+is_llt, 2+is_llt], zeros(lags-1, lags-1)));
-    P0_cycle = solve_discrete_lyapunov(C_cycle, DQD_cycle).data;
-    P0_trend = Symmetric(Inf*Matrix(I, 2, 2));
-    
-    # Trend initialisation
-    X0[1] = first(skipmissing(data)); # this allows for a weakly diffuse initialisation of the trend
-    P0_trend[isinf.(P0_trend)] .= 10.0^floor(Int, 1+log10(abs(first(skipmissing(data)))));
-    
-    # Merge into `P0`
-    P0 = Symmetric(cat(dims=[1,2], P0_trend, P0_cycle));
+    # Get initial state-space parameters and relevant coordinates
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim, first_step=true);
     
     # Set KalmanSettings
-    sspace = KalmanSettings(Array(data'), B, R, C, D, Q, X0, P0, compute_loglik=true);
+    sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
-    #=
-    Initial values / bounds for the parameters
-
-    When is_llt == false:
-    - sigma_{drift}^2
-    - sigma_{cycle}^2 / sigma_{drift}^2
-    - AR(p) parameters
-
-    When is_llt == true:
-    - sigma_{drift}^2
-    - sigma_{trend}^2 / sigma_{drift}^2
-    - sigma_{cycle}^2 / sigma_{drift}^2
-    - AR(p) parameters
-
-    In the case in which is_rw_trend == true, sigma_{drift}^2 denotes the variance of the trend.
-    =#
-
-    params_0  = [(sigma_lb + sigma_ub)/2; 0.90; zeros(lags-1)];
-    params_lb = [sigma_lb; -1*ones(lags)];
-    params_ub = [sigma_ub; +1*ones(lags)];
+    # Initial guess for the parameters
+    params_0 = vcat(
+        1e+4*ones(1+n_trimmed),
+        1e-3*ones(estim.n_trends),
+    );
+    params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
+    params_ub = vcat(1e+6*ones(1+n_trimmed), ones(estim.n_trends));
     
-    # Add `sigma_{trend}^2 / sigma_{drift}^2` entries
-    if is_llt
-        insert!(params_0,  2, (sigma_lb[1] + sigma_ub[1])/2);
-        insert!(params_lb, 2, sigma_lb[1]);
-        insert!(params_ub, 2, sigma_ub[1]);
+    # Maximum likelihood
+    tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
+    prob = OptimizationFunction(call_fmin!)
+    prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
+    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
+
+    # Update `sspace` from `res_optim`
+    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
+    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
+
+    # Recover smoothed states
+    status = kfilter_full_sample(sspace);
+    smoothed_states_container, _ = ksmoother(sspace, status);
+    smoothed_states = hcat(smoothed_states_container...);
+    
+    # Recover smoothed cycles
+    smoothed_cycles = smoothed_states[2*estim.n_trends+1:2*estim.n_trends+n_trimmed, :];
+    for i=1:n_trimmed
+        last_state_for_ith_series = findlast(B[i, :] .== 1.0);
+        if last_state_for_ith_series > 2*estim.n_trends+n_trimmed
+            smoothed_cycles[i, :] .+= smoothed_states[last_state_for_ith_series, :];
+        end
+    end
+
+    # Return minimizer
+    return res_optim.u, smoothed_states, smoothed_cycles;
+end
+
+"""
+    initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
+
+Initialise current common cycle via PCA.
+"""
+function initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
+
+    # Convenient shortcuts
+    data_current_block = residual_data[coordinates_current_block, :];
+    data_current_block_standardised = standardise(data_current_block);
+
+    # Compute PCA loadings
+    eigen_val, eigen_vect = eigen(Symmetric(cov(data_current_block_standardised, dims=2)));
+    loadings = eigen_vect[:, sortperm(-abs.(eigen_val))[1]];
+
+    # Compute PCA factor
+    pc1 = permutedims(loadings)*data_current_block_standardised;
+
+    # Rescale PCA loadings to match the original scale
+    loadings .*= std(data_current_block, dims=2)[:];
+
+    # Rescale PC1 wrt the first series
+    pc1 .*= loadings[1];
+    loadings ./= loadings[1];
+
+    if estim.lags > 1
+
+        # Backcast `pc1` first
+
+        # Reverse `pc1` time order to predict the past (i.e., backcast)
+        pc1_reversed = reverse(pc1);
+
+        # Estimate ridge backcast coefficients
+        pc1_reversed_y, pc1_reversed_x = lag(pc1_reversed, estim.lags);
+        ar_coeff_backcast = pc1_reversed_y*pc1_reversed_x'/Symmetric(pc1_reversed_x*pc1_reversed_x' + estim.Γ);
+        enforce_causality_and_invertibility!(ar_coeff_backcast);
+
+        # Generate backcast for `pc1`
+        for t=1:estim.lags
+            backcast_x = pc1[1:estim.lags];
+            pc1 = hcat(ar_coeff_backcast*backcast_x, pc1);
+        end
+
+        # Lag principal component
+        pc1_y, pc1_x = lag(pc1, estim.lags);
+
+        # Initialise complete loadings
+        complete_loadings = zeros(length(loadings), estim.lags);
+
+        # Regress one variable at the time on `pc1`
+        pc1_x_shifted_with_backcast = vcat(pc1_y, pc1_x[1:end-1, :]);
+        pc1_x_shifted = pc1_x_shifted_with_backcast[:, estim.lags+1:end];
+        for i in axes(data_current_block, 1)
+            if i == 1
+                complete_loadings[1, 1] = 1.0; # identification
+            else
+                data_current_block_yi, _ = lag(permutedims(data_current_block[i, :]), estim.lags);
+                complete_loadings[i, :] = data_current_block_yi*pc1_x_shifted'/Symmetric(pc1_x_shifted*pc1_x_shifted' + estim.Γ);
+            end
+        end
+
+        # Estimate autoregressive dynamics
+        ar_coefficients = pc1_y*pc1_x'/Symmetric(pc1_x*pc1_x' + estim.Γ);
+        
+        # Estimate var-cov matrix of the residuals
+        ar_residuals = pc1_y - ar_coefficients*pc1_x;
+        ar_residuals_variance = (ar_residuals*ar_residuals')/length(ar_residuals);
+
+        # Explained data
+        explained_data = complete_loadings*pc1_x_shifted_with_backcast;
+
+    else
+        error("`estim.lags` must be greater than one!");
     end
     
-    # Best derivative-free option from NLopt -> NLopt.LN_SBPLX()
-
-    # Maximum likelihood
-    tuple_fmin_args = (is_llt, sspace);
-    prob = OptimizationFunction(call_fmin!);
-    prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.0, reltol=1e-3);
-    minimizer_bounded = res_optim.u;
-
-    #=
-    # Alternative way to handle the bounds in the optimisation
-    tuple_fmin_args = (params_lb, params_ub, is_llt, sspace);
-    params_0_unb = [get_unbounded_logit(params_0[i], params_lb[i], params_ub[i]) for i in axes(params_0, 1)];
-    prob = OptimizationFunction(call_reparametrised_fmin!);
-    prob = OptimizationProblem(prob, params_0_unb, tuple_fmin_args);
-    res_optim = solve(prob, NLopt.LN_SBPLX(), abstol=0.0, reltol=1e-3);
-    minimizer_bounded = [get_bounded_logit(res_optim.u[i], params_lb[i], params_ub[i]) for i in axes(res_optim.u, 1)];
-    =#
-    
-    # Update sspace accordingly
-    update_sspace_Q_from_params!(minimizer_bounded, is_llt, sspace);
-    update_sspace_C_from_params!(minimizer_bounded, is_llt, sspace);
-    update_sspace_DQD_and_P0_from_params!(sspace);
-    
-    # Retrieve optimal states
-    status = kfilter_full_sample(sspace);
-    smoothed_states, _ = ksmoother(sspace, status);
-    smoothed_states_matrix = hcat(smoothed_states...);
-    trend = smoothed_states_matrix[1, :];
-    drift_or_trend_lagged = smoothed_states_matrix[2, :];
-    cycle = smoothed_states_matrix[3, :];
-
     # Return output
-    return trend, drift_or_trend_lagged, cycle, minimizer_bounded, status;
+    return complete_loadings, ar_coefficients, ar_residuals_variance, explained_data;
 end
 
 """
-    initial_univariate_decomposition_kitagawa(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
-
-This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
-
-If `is_rw_trend` is false this function models the trend as in Kitagawa and Gersch (1996, ch. 8).
-"""
-function initial_univariate_decomposition_kitagawa(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
-    trend, _, cycle, minimizer_bounded, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, false, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
-    return trend, cycle, minimizer_bounded;
-end
-
-"""
-    initial_univariate_decomposition_llt(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
-
-This function returns an initial estimate of the non-stationary and stationary components of each series. In doing so, it provides a rough starting point for the ECM algorithm.
-
-If `is_rw_trend` is false this function models the trend as a local linear trend.
-"""
-function initial_univariate_decomposition_llt(data::Union{FloatVector, JVector{Float64}}, lags::Int64, ε::Float64, is_rw_trend::Bool; sigma_lb::Vector{Float64}=[1e-3; 1e3], sigma_ub::Vector{Float64}=[1e3; 1e4])
-    trend, drift, cycle, minimizer_bounded, _ = initial_univariate_decomposition(data, lags, ε, is_rw_trend, true, sigma_lb=sigma_lb, sigma_ub=sigma_ub);
-    return trend, drift, cycle, minimizer_bounded;
-end
-
-"""
-    initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; use_llt::Bool=false)
+    initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
 
 Detrend each series in `Y_untrimmed` (nxT). Data can be a copy of `estim.Y`.
 
 Return initial common trends and detrended data (after having removed initial and ending missings).
 """
-function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; use_llt::Bool=false)
+function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings)
     
     # Error management
     if !(isdefined(estim, :drifts_selection) &
@@ -337,61 +385,98 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     first_ind = findfirst(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
     last_ind = findlast(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
     Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
-    n_trimmed, T_trimmed = size(Y_trimmed);
+    n_trimmed = size(Y_trimmed, 1);
 
-    # Compute individual trends
-    trends = zeros(n_trimmed, T_trimmed);
-    cycles = zeros(n_trimmed, T_trimmed);
-    trends_variance = zeros(n_trimmed);
+    # Recover initial guess from step 1
+    @info("Initialisation > warm start")
+    params_0, _, smoothed_cycles_0 = MessyTimeSeriesOptim.initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
+
+    # Get initial state-space parameters and relevant coordinates
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = MessyTimeSeriesOptim.initial_sspace_structure(Y_trimmed, estim);
+
+    # Set `coordinates_free_params_B` to `false`
+    coordinates_free_params_B .= false;
+
+    # Determine which series can load on each cycle
+    boolean_coordinates_blocks = (estim.cycles_skeleton .!= 0) .| estim.cycles_free_params;
+    coordinates_blocks = [findall(boolean_coordinates_blocks[:, i]) for i=1:estim.n_cycles];
+
+    # Initialise common cycles iteratively via PCA
+    residual_data = copy(smoothed_cycles_0);
+
+    # Loop over common cycles
+    for i=1:estim.n_cycles
+
+        # Pointers
+        coordinates_current_block = coordinates_blocks[i];
+
+        # Loadings for the i-th common cycle
+        complete_loadings, ar_coefficients, ar_residuals_variance, explained_data = initialise_common_cycle(estim, residual_data, coordinates_current_block);
+        
+        # Position of the i-th common cycle in the state-space representation
+        coordinates_pc1 = 1 + (i-1)*estim.lags + 2*estim.n_trends + n_trimmed;
+
+        # Position `complete_loadings` in `B`
+        B[:, coordinates_pc1:coordinates_pc1+estim.lags-1] = complete_loadings;
+
+        # Position `ar_dynamics` in `C`
+        C[coordinates_pc1, coordinates_pc1:coordinates_pc1+estim.lags-1] .= ar_coefficients[:];
+
+        # Position `resid_variance` in `Q`
+        Q[estim.n_trends + n_trimmed + i, estim.n_trends + n_trimmed + i] = ar_residuals_variance[1];
+
+        # Recompute residual data
+        residual_data[coordinates_current_block, :] .-= explained_data;
+    end
+    
+    idio_ar_coefficients = zeros(n_trimmed);
+    idio_residuals_variance = zeros(n_trimmed);
 
     for i=1:n_trimmed
-        verb_message(estim.verb, "Initialisation > NLopt.LN_SBPLX, variable $(i)");
-        drifts_selection_ids = findall(view(estim.trends_skeleton, i, :) .!= 0.0); # (i, :) is correct since it iterates series-wise
-        if length(drifts_selection_ids) > 0
-            drifts_selection_id = drifts_selection_ids[findmax(i -> estim.drifts_selection[i], drifts_selection_ids)[2]];
-            trends[i, :], cycles[i, :], minimizer_bounded = initial_univariate_decomposition_kitagawa(Y_trimmed[i, :], estim.lags, estim.ε, estim.drifts_selection[drifts_selection_id]==0);
-            trends_variance[i] = minimizer_bounded[1];
-        else
-            cycles[i, :] .= Y_trimmed[i, :];
-        end
+    
+        # Lag residual data
+        idio_y, idio_x = lag(permutedims(residual_data[i, :]), 1);
+        
+        # Idiosyncratic cycles coefficients
+        idio_ar_coefficient = idio_y*idio_x'/Symmetric(idio_x*idio_x');
+        idio_ar_coefficients[i] = idio_ar_coefficient[1];
+        
+        # Idiosyncratic cycles variance
+        final_residuals = idio_y - idio_ar_coefficient*idio_x;
+        final_residuals_variance = (final_residuals*final_residuals')/length(final_residuals);
+        idio_residuals_variance[i] = final_residuals_variance[1];
     end
 
-    # Interpolated observables (NOTE: not detrended yet!)
-    detrended_data = trends+cycles;
+    C_idio_view = @view C[2*estim.n_trends+1:2*estim.n_trends+n_trimmed, 2*estim.n_trends+1:2*estim.n_trends+n_trimmed];
+    C_idio_view[diagind(C_idio_view)] .= idio_ar_coefficients;
+    Q_idio_view = @view Q[estim.n_trends+1:estim.n_trends+n_trimmed, estim.n_trends+1:estim.n_trends+n_trimmed];
+    Q_idio_view[diagind(Q_idio_view)] .= idio_residuals_variance;
+
+    # Set KalmanSettings
+    sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
+
+    # Update `params_0`
+    # The variance for the cycles is re-calibrated more aggressively given that in the warm start there are no common cycles
+    params_lb = vcat(1e+2*ones(1+n_trimmed), params_0[2+n_trimmed:end]/10);
+    params_ub = vcat(1e+6*ones(1+n_trimmed), params_0[2+n_trimmed:end]*10);
     
-    # Compute common trends. `common_trends` is equivalent to `trends` if there aren't common trends to compute.
-    common_trends = zeros(estim.n_trends, T_trimmed);
-    common_trends_variance = zeros(estim.n_trends);
-    
-    # Looping over each trend in `common_trends`
-    for i=1:estim.n_trends
+    # Maximum likelihood
+    @info("Initialisation > running optimizer")
+    tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
+    prob = OptimizationFunction(call_fmin!)
+    prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
+    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
 
-        # Determine which series to focus on
-        series_loading_on_current_trend = findall(view(estim.trends_skeleton, :, i) .!= 0.0); # (:, i) is correct since it iterates trend-wise
-        series_loading_on_further_trends = [findlast(view(estim.trends_skeleton, j, :) .!= 0.0) .> i for j in series_loading_on_current_trend];
-        
-        # Get selection of series onto which compute the current common trend
-        coordinates_current_block = series_loading_on_current_trend[.!series_loading_on_further_trends];
+    # Update sspace accordingly
+    update_sspace_B_from_params!(res_optim.u, coordinates_free_params_B, sspace);
+    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
+    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
 
-        # Unadjusted estimate of the trend (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
-        common_trends[i, :] = mean(trends[coordinates_current_block, :] ./ estim.trends_skeleton[coordinates_current_block, i], dims=1);
-        
-        # Unadjusted estimate of the variances per series
-        unadjusted_trends_variance = trends_variance[coordinates_current_block];
-        unadjusted_trends_variance ./= sum(estim.trends_skeleton[coordinates_current_block, :] .!= 0.0, dims=2)[:];
-
-        # Adjusted estimate of the initial variance for the common trend (dividing by the coefficients in `estim.trends_skeleton` allows to appropriately weight each series)
-        common_trends_variance[i] = mean(unadjusted_trends_variance ./ estim.trends_skeleton[coordinates_current_block, i].^2);
-
-        # Update `trends`
-        for j in series_loading_on_current_trend
-            trends[j, :] .-= estim.trends_skeleton[j, i]*common_trends[i, :];
-        end
-    end
-    
-    # Compute detrended data
-    detrended_data .-= estim.trends_skeleton*common_trends;
+    # Recover smoothed states
+    status = kfilter_full_sample(sspace);
+    smoothed_states_container, _ = ksmoother(sspace, status);
+    smoothed_states = hcat(smoothed_states_container...);
 
     # Return output
-    return common_trends, common_trends_variance, detrended_data;
+    return smoothed_states, sspace;
 end

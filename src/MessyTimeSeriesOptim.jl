@@ -6,7 +6,7 @@ module MessyTimeSeriesOptim
 	using Dates, Distributed, Logging, LoopVectorization;
 	using Distributions, LinearAlgebra, SparseArrays, StableRNGs, Statistics;
 	using MessyTimeSeries, Optimization, OptimizationNLopt;
-	
+		
 	# Aliases for MessyTimeSeries
 	find_observed_data = MessyTimeSeries.find_observed_data;
 	update_smoothing_factors! = MessyTimeSeries.update_smoothing_factors!;
@@ -25,7 +25,7 @@ module MessyTimeSeriesOptim
 	# Export
 	export EstimSettings, DFMSettings, VARSettings, VMASettings, ValidationSettings, HyperGrid;
 	export build_Γ;
-	export initial_univariate_decomposition_kitagawa, initial_univariate_decomposition_llt;
+	export initial_detrending;
 	export ecm;
 	export select_hyperparameters, fc_err, jackknife_err;
 end
