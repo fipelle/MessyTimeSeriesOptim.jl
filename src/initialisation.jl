@@ -27,7 +27,7 @@ function update_sspace_DQD_and_P0_from_params!(
 end
 
 """
-    fmin!(
+    update_sspace_from_params!(
         constrained_params         :: AbstractVector{Float64}, 
         sspace                     :: KalmanSettings, 
         coordinates_free_params_B  :: BitMatrix, 
@@ -35,9 +35,9 @@ end
         coordinates_free_params_P0 :: BitMatrix
     )
 
-Return -1 times the log-likelihood function (or a large number in case of numerical problems).
+Update free parameters in `sspace`.
 """
-function fmin!(
+function update_sspace_from_params!(
     constrained_params         :: AbstractVector{Float64}, 
     sspace                     :: KalmanSettings, 
     coordinates_free_params_B  :: BitMatrix, 
@@ -81,6 +81,37 @@ function fmin!(
     else
         is_P0_non_problematic = false;
     end
+
+    return is_Q_non_problematic, is_P0_non_problematic;
+end
+
+"""
+    fmin!(
+        constrained_params         :: AbstractVector{Float64}, 
+        sspace                     :: KalmanSettings, 
+        coordinates_free_params_B  :: BitMatrix, 
+        coordinates_free_params_Q  :: BitMatrix, 
+        coordinates_free_params_P0 :: BitMatrix
+    )
+
+Return -1 times the log-likelihood function (or a large number in case of numerical problems).
+"""
+function fmin!(
+    constrained_params         :: AbstractVector{Float64}, 
+    sspace                     :: KalmanSettings, 
+    coordinates_free_params_B  :: BitMatrix, 
+    coordinates_free_params_Q  :: BitMatrix, 
+    coordinates_free_params_P0 :: BitMatrix
+)
+
+    # Update `sspace` free parameters
+    is_Q_non_problematic, is_P0_non_problematic = update_sspace_from_params!(
+        constrained_params,
+        sspace,
+        coordinates_free_params_B,
+        coordinates_free_params_Q,
+        coordinates_free_params_P0
+    )
     
     # Regular run
     if is_Q_non_problematic && is_P0_non_problematic
