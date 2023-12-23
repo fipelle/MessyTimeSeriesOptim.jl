@@ -111,7 +111,7 @@ function fmin!(
         coordinates_free_params_B,
         coordinates_free_params_Q,
         coordinates_free_params_P0
-    )
+    );
     
     # Regular run
     if is_Q_non_problematic && is_P0_non_problematic
@@ -297,11 +297,16 @@ function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSett
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
     
     # Recover optimum
-    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2).u;
+    constrained_params = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2).u;
     
-    # Update `sspace` from `res_optim`
-    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
-    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
+    # Update `sspace` free parameters
+    _ = update_sspace_from_params!(
+        constrained_params,
+        sspace,
+        coordinates_free_params_B,
+        coordinates_free_params_Q,
+        coordinates_free_params_P0
+    );
 
     # Recover smoothed states
     status = kfilter_full_sample(sspace);
@@ -318,7 +323,7 @@ function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSett
     end
 
     # Return minimizer
-    return res_optim.u, smoothed_states, smoothed_cycles;
+    return constrained_params, smoothed_states, smoothed_cycles;
 end
 
 """
@@ -429,10 +434,10 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
 
     # Recover initial guess from step 1
     @info("Initialisation > warm start")
-    params_0, _, smoothed_cycles_0 = MessyTimeSeriesOptim.initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
+    _, _, smoothed_cycles_0 = MessyTimeSeriesOptim.initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
 
     # Get initial state-space parameters and relevant coordinates
-    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = MessyTimeSeriesOptim.initial_sspace_structure(Y_trimmed, estim);
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
 
     # Set `coordinates_free_params_B` to `false`
     coordinates_free_params_B .= false;
@@ -495,23 +500,29 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
-    # Update `params_0`
-    # The variance for the cycles is re-calibrated more aggressively given that in the warm start there are no common cycles
-    params_lb = vcat(1e+2*ones(1+n_trimmed), params_0[2+n_trimmed:end]/10);
-    params_ub = vcat(1e+6*ones(1+n_trimmed), params_0[2+n_trimmed:end]*10);
-    
+    # Initial guess for the parameters
+    params_0 = 1e-1*ones(1+n_trimmed);  # variances of the cycles' innovations
+    params_lb = 1e-3*ones(1+n_trimmed); # NOTE: > 1e-4
+    params_ub = 1e+3*ones(1+n_trimmed);
+
     # Maximum likelihood
     @info("Initialisation > running optimizer")
     tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!)
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
 
-    # Update sspace accordingly
-    update_sspace_B_from_params!(res_optim.u, coordinates_free_params_B, sspace);
-    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
-    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
+    # Recover optimum
+    constrained_params = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2).u;
 
+    # Update `sspace` free parameters
+    _ = update_sspace_from_params!(
+        constrained_params,
+        sspace,
+        coordinates_free_params_B,
+        coordinates_free_params_Q,
+        coordinates_free_params_P0
+    );
+    
     # Recover smoothed states
     status = kfilter_full_sample(sspace);
     smoothed_states_container, _ = ksmoother(sspace, status);
