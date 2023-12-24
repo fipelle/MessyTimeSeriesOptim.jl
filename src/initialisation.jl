@@ -145,9 +145,8 @@ call_fmin!(constrained_params::AbstractVector{Float64}, tuple_fmin_args::Tuple) 
 
 """
     initial_sspace_structure(
-        data       :: Union{FloatMatrix, JMatrix{Float64}}, 
-        estim      :: EstimSettings; 
-        first_step :: Bool = false
+        data  :: Union{FloatMatrix, JMatrix{Float64}}, 
+        estim :: EstimSettings
     )
 
 Get initial state-space parameters and relevant coordinates. 
@@ -155,9 +154,8 @@ Get initial state-space parameters and relevant coordinates.
 Trends are modelled using the Kitagawa representation.
 """
 function initial_sspace_structure(
-    data       :: Union{FloatMatrix, JMatrix{Float64}}, 
-    estim      :: EstimSettings; 
-    first_step :: Bool = false
+    data  :: Union{FloatMatrix, JMatrix{Float64}}, 
+    estim :: EstimSettings
 )
 
     # `n` for initialisation (it may differ from the one in `estim`)
@@ -176,15 +174,11 @@ function initial_sspace_structure(
         B_common_cycles[1, i] = 1.0;
     end
 
-    if first_step
-        B_common_cycles[B_common_cycles .!= 1.0] .= 0.0; # no common cycles
-    end
-
     # Setup loading matrix
     B = hcat(B_trends, B_idio_cycles, B_common_cycles);
 
     # Setup BitMatrix for the free parameters in `B`
-    # NOTE: shortcut to update the factor loadings (not if first_step)
+    # NOTE: shortcut to update the factor loadings
     coordinates_free_params_B = B .> 1.0;
 
     # Setup covariance matrix measurement error
@@ -196,11 +190,7 @@ function initial_sspace_structure(
 
     # Setup transition matrix for the idiosyncratic cycles
     C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
-    if first_step
-        C_idio_cycles[1, 1] = 0.0;                    # set to noise
-        C_idio_cycles[C_idio_cycles .== 0.1] .*= 9.0; # set to persistent cycles (as persistent as the common cycles)
-    end
-    
+        
     # Setup transition matrix for the common cycles
     C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
     C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
