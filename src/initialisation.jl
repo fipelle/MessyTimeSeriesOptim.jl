@@ -64,7 +64,7 @@ function update_sspace_from_params!(
     
     # Free parameters in the state equation covariance matrix
     if sum(coordinates_free_params_Q) > 0
-        sspace.Q.data[coordinates_free_params_Q] .= constrained_params[counter+1:counter+end];
+        sspace.Q.data[coordinates_free_params_Q] .= constrained_params[counter+1:end];
     end
 
     # Determine whether Q is problematic
@@ -214,7 +214,7 @@ function initial_sspace_structure(
 
     # Setup BitMatrix for the free parameters in `Q`
     # NOTE: All diagonal elements but those referring to the trends, whose variances are fixed to 1e-4
-    coordinates_free_params_Q = Q .== 1;
+    coordinates_free_params_Q = Q .!= 0.0;
     coordinates_free_params_Q[1:estim.n_trends, 1:estim.n_trends] .= false;
     
     # Setup selection matrix D for the trends
