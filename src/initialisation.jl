@@ -289,7 +289,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     last_ind = findlast(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
     Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
     n_trimmed = size(Y_trimmed, 1);
-    
+
     # Get initial state-space parameters and relevant coordinates
     B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
 
@@ -300,9 +300,22 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
     # Initial guess for the parameters
-    params_0 = 1e-1*ones(1+n_trimmed);  # variances of the cycles' innovations
-    params_lb = 1e-3*ones(1+n_trimmed); # NOTE: > 1e-4
-    params_ub = 1e+3*ones(1+n_trimmed);
+    params_0 = vcat(
+        ones(sum(coordinates_free_params_B)),     # loadings
+        1e-1*ones(1+n_trimmed);                   # variances of the cycles' innovations
+    )
+    
+    # Lower bound
+    params_lb = vcat(
+        -10*ones(sum(coordinates_free_params_B)), # loadings
+        1e-2*ones(1+n_trimmed);                   # variances of the cycles' innovations (NOTE: > 1e-4)
+    );
+
+    # Upper bound
+    params_ub = vcat(
+        +10*ones(sum(coordinates_free_params_B)), # loadings
+        1e+2*ones(1+n_trimmed);                   # variances of the cycles' innovations
+    );
 
     # Maximum likelihood
     @info("Initialisation > running optimizer")
