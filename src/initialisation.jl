@@ -190,7 +190,7 @@ function initial_sspace_structure(
 
     # Setup transition matrix for the idiosyncratic cycles
     C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
-        
+
     # Setup transition matrix for the common cycles
     C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
     C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
@@ -261,138 +261,6 @@ function initial_sspace_structure(
 
     # Return state-space matrices and relevant coordinates
     return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0;
-end
-
-"""
-    initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
-
-Run first step of the initialisation to find reasonable initial guesses.
-"""
-function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
-    
-    # Get initial state-space parameters and relevant coordinates
-    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim, first_step=true);
-    
-    # Set KalmanSettings
-    sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
-
-    # Initial guess for the parameters
-    params_0 = 1e-1*ones(1+n_trimmed);  # variances of the cycles' innovations
-    params_lb = 1e-3*ones(1+n_trimmed); # NOTE: > 1e-4
-    params_ub = 1e+3*ones(1+n_trimmed);
-    
-    # Maximum likelihood
-    tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0);
-    prob = OptimizationFunction(call_fmin!)
-    prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    
-    # Recover optimum
-    constrained_params = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2).u;
-    
-    # Update `sspace` free parameters
-    _ = update_sspace_from_params!(
-        constrained_params,
-        sspace,
-        coordinates_free_params_B,
-        coordinates_free_params_Q,
-        coordinates_free_params_P0
-    );
-
-    # Recover smoothed states
-    status = kfilter_full_sample(sspace);
-    smoothed_states_container, _ = ksmoother(sspace, status);
-    smoothed_states = hcat(smoothed_states_container...);
-    
-    # Recover smoothed cycles
-    smoothed_cycles = smoothed_states[2*estim.n_trends+1:2*estim.n_trends+n_trimmed, :];
-    for i=1:n_trimmed
-        last_state_for_ith_series = findlast(B[i, :] .== 1.0);
-        if last_state_for_ith_series > 2*estim.n_trends+n_trimmed
-            smoothed_cycles[i, :] .+= smoothed_states[last_state_for_ith_series, :];
-        end
-    end
-
-    # Return minimizer
-    return constrained_params, smoothed_states, smoothed_cycles;
-end
-
-"""
-    initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
-
-Initialise current common cycle via PCA.
-"""
-function initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
-
-    # Convenient shortcuts
-    data_current_block = residual_data[coordinates_current_block, :];
-    data_current_block_standardised = standardise(data_current_block);
-
-    # Compute PCA loadings
-    eigen_val, eigen_vect = eigen(Symmetric(cov(data_current_block_standardised, dims=2)));
-    loadings = eigen_vect[:, sortperm(-abs.(eigen_val))[1]];
-
-    # Compute PCA factor
-    pc1 = permutedims(loadings)*data_current_block_standardised;
-
-    # Rescale PCA loadings to match the original scale
-    loadings .*= std(data_current_block, dims=2)[:];
-
-    # Rescale PC1 wrt the first series
-    pc1 .*= loadings[1];
-    loadings ./= loadings[1];
-
-    if estim.lags > 1
-
-        # Backcast `pc1` first
-
-        # Reverse `pc1` time order to predict the past (i.e., backcast)
-        pc1_reversed = reverse(pc1);
-
-        # Estimate ridge backcast coefficients
-        pc1_reversed_y, pc1_reversed_x = lag(pc1_reversed, estim.lags);
-        ar_coeff_backcast = pc1_reversed_y*pc1_reversed_x'/Symmetric(pc1_reversed_x*pc1_reversed_x' + estim.Γ);
-        enforce_causality_and_invertibility!(ar_coeff_backcast);
-
-        # Generate backcast for `pc1`
-        for t=1:estim.lags
-            backcast_x = pc1[1:estim.lags];
-            pc1 = hcat(ar_coeff_backcast*backcast_x, pc1);
-        end
-
-        # Lag principal component
-        pc1_y, pc1_x = lag(pc1, estim.lags);
-
-        # Initialise complete loadings
-        complete_loadings = zeros(length(loadings), estim.lags);
-
-        # Regress one variable at the time on `pc1`
-        pc1_x_shifted_with_backcast = vcat(pc1_y, pc1_x[1:end-1, :]);
-        pc1_x_shifted = pc1_x_shifted_with_backcast[:, estim.lags+1:end];
-        for i in axes(data_current_block, 1)
-            if i == 1
-                complete_loadings[1, 1] = 1.0; # identification
-            else
-                data_current_block_yi, _ = lag(permutedims(data_current_block[i, :]), estim.lags);
-                complete_loadings[i, :] = data_current_block_yi*pc1_x_shifted'/Symmetric(pc1_x_shifted*pc1_x_shifted' + estim.Γ);
-            end
-        end
-
-        # Estimate autoregressive dynamics
-        ar_coefficients = pc1_y*pc1_x'/Symmetric(pc1_x*pc1_x' + estim.Γ);
-        
-        # Estimate var-cov matrix of the residuals
-        ar_residuals = pc1_y - ar_coefficients*pc1_x;
-        ar_residuals_variance = (ar_residuals*ar_residuals')/length(ar_residuals);
-
-        # Explained data
-        explained_data = complete_loadings*pc1_x_shifted_with_backcast;
-
-    else
-        error("`estim.lags` must be greater than one!");
-    end
-    
-    # Return output
-    return complete_loadings, ar_coefficients, ar_residuals_variance, explained_data;
 end
 
 """
