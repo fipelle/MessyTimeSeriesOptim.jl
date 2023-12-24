@@ -289,71 +289,12 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     last_ind = findlast(sum(ismissing.(Y_untrimmed), dims=1) .== 0)[2];
     Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
     n_trimmed = size(Y_trimmed, 1);
-
-    # Recover initial guess from step 1
-    @info("Initialisation > warm start")
-    _, _, smoothed_cycles_0 = MessyTimeSeriesOptim.initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
-
+    
     # Get initial state-space parameters and relevant coordinates
     B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
 
     # Set `coordinates_free_params_B` to `false`
     coordinates_free_params_B .= false;
-
-    # Determine which series can load on each cycle
-    boolean_coordinates_blocks = (estim.cycles_skeleton .!= 0) .| estim.cycles_free_params;
-    coordinates_blocks = [findall(boolean_coordinates_blocks[:, i]) for i=1:estim.n_cycles];
-
-    # Initialise common cycles iteratively via PCA
-    residual_data = copy(smoothed_cycles_0);
-
-    # Loop over common cycles
-    for i=1:estim.n_cycles
-
-        # Pointers
-        coordinates_current_block = coordinates_blocks[i];
-
-        # Loadings for the i-th common cycle
-        complete_loadings, ar_coefficients, ar_residuals_variance, explained_data = initialise_common_cycle(estim, residual_data, coordinates_current_block);
-        
-        # Position of the i-th common cycle in the state-space representation
-        coordinates_pc1 = 1 + (i-1)*estim.lags + 2*estim.n_trends + n_trimmed;
-
-        # Position `complete_loadings` in `B`
-        B[:, coordinates_pc1:coordinates_pc1+estim.lags-1] = complete_loadings;
-
-        # Position `ar_dynamics` in `C`
-        C[coordinates_pc1, coordinates_pc1:coordinates_pc1+estim.lags-1] .= ar_coefficients[:];
-
-        # Position `resid_variance` in `Q`
-        Q[estim.n_trends + n_trimmed + i, estim.n_trends + n_trimmed + i] = ar_residuals_variance[1];
-
-        # Recompute residual data
-        residual_data[coordinates_current_block, :] .-= explained_data;
-    end
-    
-    idio_ar_coefficients = zeros(n_trimmed);
-    idio_residuals_variance = zeros(n_trimmed);
-
-    for i=1:n_trimmed
-    
-        # Lag residual data
-        idio_y, idio_x = lag(permutedims(residual_data[i, :]), 1);
-        
-        # Idiosyncratic cycles coefficients
-        idio_ar_coefficient = idio_y*idio_x'/Symmetric(idio_x*idio_x');
-        idio_ar_coefficients[i] = idio_ar_coefficient[1];
-        
-        # Idiosyncratic cycles variance
-        final_residuals = idio_y - idio_ar_coefficient*idio_x;
-        final_residuals_variance = (final_residuals*final_residuals')/length(final_residuals);
-        idio_residuals_variance[i] = final_residuals_variance[1];
-    end
-
-    C_idio_view = @view C[2*estim.n_trends+1:2*estim.n_trends+n_trimmed, 2*estim.n_trends+1:2*estim.n_trends+n_trimmed];
-    C_idio_view[diagind(C_idio_view)] .= idio_ar_coefficients;
-    Q_idio_view = @view Q[estim.n_trends+1:estim.n_trends+n_trimmed, estim.n_trends+1:estim.n_trends+n_trimmed];
-    Q_idio_view[diagind(Q_idio_view)] .= idio_residuals_variance;
 
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
