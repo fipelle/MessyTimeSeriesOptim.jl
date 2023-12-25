@@ -64,7 +64,23 @@ function update_sspace_from_params!(
     
     # Free parameters in the state equation covariance matrix
     if sum(coordinates_free_params_Q) > 0
-        sspace.Q.data[coordinates_free_params_Q] .= constrained_params[counter+1:end];
+        
+        # Update cycles' innovations variances
+        sspace.Q.data[coordinates_free_params_Q] .= constrained_params[counter+1:counter+sum(coordinates_free_params_Q)];
+        
+        # Update counter
+        counter += sum(coordinates_free_params_Q);
+
+        # Trends' innovations variance ratios
+        var_ratios = @view constrained_params[counter+1:end];
+        
+        # Update trends' innovations variances
+        n_trends = length(var_ratios);
+        for i=1:n_trends
+            coordinates_series_on_ith_trend = sspace.B[:, 1+(i-1)*2] .== 1;
+            var_cycles_innovations = sspace.B[coordinates_series_on_ith_trend, :]*sspace.D*sspace.Q*[zeros(n_trends); ones(size(sspace.Q, 1)-n_trends)];
+            sspace.Q.data[i, i] = minimum(var_cycles_innovations)*var_ratios[i];
+        end
     end
 
     # Determine whether Q is problematic
@@ -190,7 +206,8 @@ function initial_sspace_structure(
 
     # Setup transition matrix for the idiosyncratic cycles
     C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
-
+    C_idio_cycles[1, 1] = 0.0;
+    
     # Setup transition matrix for the common cycles
     C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
     C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
@@ -294,7 +311,8 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
 
     # Set `coordinates_free_params_B` to `false`
-    coordinates_free_params_B .= false;
+    coordinates_free_params_B[:, end-2:end] .= false;
+    B[:, end-2:end] .= 0.0;
 
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
@@ -302,19 +320,22 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Initial guess for the parameters
     params_0 = vcat(
         ones(sum(coordinates_free_params_B)),     # loadings
-        1e-1*ones(1+n_trimmed);                   # variances of the cycles' innovations
+        1e-1*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        1e-3*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     )
-    
+
     # Lower bound
     params_lb = vcat(
         -10*ones(sum(coordinates_free_params_B)), # loadings
-        1e-2*ones(1+n_trimmed);                   # variances of the cycles' innovations (NOTE: > 1e-4)
+        1e-3*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        1e-6*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     );
 
     # Upper bound
     params_ub = vcat(
         +10*ones(sum(coordinates_free_params_B)), # loadings
-        1e+2*ones(1+n_trimmed);                   # variances of the cycles' innovations
+        1e+3*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        ones(estim.n_trends)                      # variance of the trends' innovations (as a function of the cycles)
     );
 
     # Maximum likelihood
