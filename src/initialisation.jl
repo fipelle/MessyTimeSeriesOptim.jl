@@ -207,7 +207,7 @@ function initial_sspace_structure(
     # Setup transition matrix for the idiosyncratic cycles
     C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
     C_idio_cycles[1, 1] = 0.0;
-    
+
     # Setup transition matrix for the common cycles
     C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
     C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
@@ -320,7 +320,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Initial guess for the parameters
     params_0 = vcat(
         ones(sum(coordinates_free_params_B)),     # loadings
-        1e+1*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        ones(1+n_trimmed),                        # variances of the cycles' innovations
         1e-4*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     )
 
@@ -334,7 +334,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Upper bound
     params_ub = vcat(
         +10*ones(sum(coordinates_free_params_B)), # loadings
-        1e+6*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        1e+4*ones(1+n_trimmed),                   # variances of the cycles' innovations
         1e-2*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     );
 
