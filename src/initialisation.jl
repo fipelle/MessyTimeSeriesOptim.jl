@@ -78,7 +78,7 @@ function update_sspace_from_params!(
         n_trends = length(var_ratios);
         for i=1:n_trends
             coordinates_series_on_ith_trend = sspace.B[:, 1+(i-1)*2] .== 1;
-            var_cycles_innovations = (sspace.B[coordinates_series_on_ith_trend, :] .!= 0.0)*sspace.D*sspace.Q*[zeros(n_trends); ones(size(sspace.Q, 1)-n_trends)];
+            var_cycles_innovations = sspace.B[coordinates_series_on_ith_trend, :]*sspace.D*sspace.Q*[zeros(n_trends); ones(size(sspace.Q, 1)-n_trends)];
             sspace.Q.data[i, i] = minimum(var_cycles_innovations)*var_ratios[i];
         end
     end
@@ -311,8 +311,8 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
 
     # Set `coordinates_free_params_B` to `false`
-    coordinates_free_params_B[:, end-2:end] .= false;
-    B[:, end-2:end] .= 0.0;
+    #coordinates_free_params_B[:, end-2:end] .= false;
+    #B[:, end-2:end] .= 0.0;
 
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
@@ -321,7 +321,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     params_0 = vcat(
         ones(sum(coordinates_free_params_B)),     # loadings
         ones(1+n_trimmed),                        # variances of the cycles' innovations
-        1e-4*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
+        1e-5*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     )
 
     # Lower bound
@@ -335,7 +335,7 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     params_ub = vcat(
         +10*ones(sum(coordinates_free_params_B)), # loadings
         1e+4*ones(1+n_trimmed),                   # variances of the cycles' innovations
-        1e-2*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
+        1e-4*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     );
 
     # Maximum likelihood
