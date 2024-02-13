@@ -327,14 +327,14 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     # Lower bound
     params_lb = vcat(
         -10*ones(sum(coordinates_free_params_B)), # loadings
-        1e-4*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        1e-2*ones(1+n_trimmed),                   # variances of the cycles' innovations
         1e-6*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     );
 
     # Upper bound
     params_ub = vcat(
         +10*ones(sum(coordinates_free_params_B)), # loadings
-        1e+4*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        1e+2*ones(1+n_trimmed),                   # variances of the cycles' innovations
         1e-4*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
     );
 
