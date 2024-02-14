@@ -1,54 +1,16 @@
 """
-    update_sspace_B_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
-
-Update free coordinates in `sspace.B` from `constrained_params`.
-"""
-function update_sspace_B_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
-    sspace.B[coordinates_free_params_B] .= constrained_params[1:sum(coordinates_free_params_B)];
-end
-
-"""
-    update_sspace_Q_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
-
-Update `sspace.Q` from `constrained_params`.
-"""
-function update_sspace_Q_from_params!(constrained_params::AbstractVector{Float64}, coordinates_free_params_B::BitMatrix, sspace::KalmanSettings)
-
-    # Find relevant coordinates
-    n_series = size(sspace.B, 1);
-    n_trends_ext = findall(sspace.B[1,:] .== 1)[2]-1;
-    n_trends = n_trends_ext/2 |> Int64;
-
-    # Trends dictionary
-    trends_dict = Dict(i=>j for (j, i) in enumerate(1:2:n_trends_ext));
-
-    # Break down parameters
-    params_ratios = constrained_params[sum(coordinates_free_params_B)+1:sum(coordinates_free_params_B)+1+n_series];
-    params_variances = constrained_params[sum(coordinates_free_params_B)+2+n_series:end];
-
-    # Ratios to variances
-    params_ratios_as_variances = copy(params_ratios);
-    params_ratios_as_variances[end] *= params_variances[1]; # first common cycle
-    for i=1:length(params_ratios_as_variances)-1
-        coordinates_trends_in_B = findall(sspace.B[i, 1:n_trends_ext] .!= 0.0);   
-        coordinates_trends_in_params = getindex.(Ref(trends_dict), coordinates_trends_in_B);
-        params_ratios_as_variances[i] *= sum(view(params_variances, coordinates_trends_in_params)); # idio cycles
-    end
-    
-    # Merge variances
-    merged_params_variances = vcat(params_variances[1:n_trends], params_ratios_as_variances, params_variances[n_trends+1:end]);
-
-    # Update sspace.Q
-    sspace.Q.data[diagind(sspace.Q.data)] .= merged_params_variances;
-end
-
-"""
-    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
+    update_sspace_DQD_and_P0_from_params!(
+        sspace                     :: KalmanSettings,
+        coordinates_free_params_P0 :: BitMatrix
+    )
 
 Update `sspace.DQD` and the free entries of `sspace.P0`.
 """
-function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMatrix, sspace::KalmanSettings)
-
+function update_sspace_DQD_and_P0_from_params!(
+    sspace                     :: KalmanSettings,
+    coordinates_free_params_P0 :: BitMatrix
+)
+    
     # Update `sspace.DQD`
     sspace.DQD.data .= Symmetric(sspace.D*sspace.Q*sspace.D').data;
 
@@ -65,20 +27,66 @@ function update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0::BitMa
 end
 
 """
-    fmin!(constrained_params::AbstractVector{Float64}, sspace::KalmanSettings, coordinates_free_params_B::BitMatrix, coordinates_free_params_P0::BitMatrix)
+    update_sspace_from_params!(
+        constrained_params         :: AbstractVector{Float64}, 
+        sspace                     :: KalmanSettings, 
+        coordinates_free_params_B  :: BitMatrix, 
+        coordinates_free_params_Q  :: BitMatrix, 
+        coordinates_free_params_P0 :: BitMatrix
+    )
 
-Return -1 times the log-likelihood function (or a large number in case of numerical problems).
+Update free parameters in `sspace`.
 """
-function fmin!(constrained_params::AbstractVector{Float64}, sspace::KalmanSettings, coordinates_free_params_B::BitMatrix, coordinates_free_params_P0::BitMatrix)
+function update_sspace_from_params!(
+    constrained_params         :: AbstractVector{Float64}, 
+    sspace                     :: KalmanSettings, 
+    coordinates_free_params_B  :: BitMatrix, 
+    coordinates_free_params_Q  :: BitMatrix, 
+    coordinates_free_params_P0 :: BitMatrix
+)
 
-    # Update sspace accordingly
-    update_sspace_B_from_params!(constrained_params, coordinates_free_params_B, sspace);
-    update_sspace_Q_from_params!(constrained_params, coordinates_free_params_B, sspace);
+    # Useful shortcut
+    counter = 0;
+
+    # Free parameters in the measurement equation coefficients
+    if sum(coordinates_free_params_B) > 0
+        sspace.B[coordinates_free_params_B] .= constrained_params[1:sum(coordinates_free_params_B)];
+        counter += sum(coordinates_free_params_B);
+    end
+
+    # Free parameters in the state equation coefficients
+    #=
+    if sum(coordinates_free_params_C) > 0
+        sspace.C[coordinates_free_params_C] .= constrained_params[counter+1:counter+sum(coordinates_free_params_C)];
+        counter += sum(coordinates_free_params_C);
+    end
+    =#
+    
+    # Free parameters in the state equation covariance matrix
+    if sum(coordinates_free_params_Q) > 0
+        
+        # Update cycles' innovations variances
+        sspace.Q.data[coordinates_free_params_Q] .= constrained_params[counter+1:counter+sum(coordinates_free_params_Q)];
+        
+        # Update counter
+        counter += sum(coordinates_free_params_Q);
+
+        # Trends' innovations variance ratios
+        var_ratios = @view constrained_params[counter+1:end];
+        
+        # Update trends' innovations variances
+        n_trends = length(var_ratios);
+        for i=1:n_trends
+            coordinates_series_on_ith_trend = sspace.B[:, 1+(i-1)*2] .== 1;
+            var_cycles_innovations = sspace.B[coordinates_series_on_ith_trend, :]*sspace.D*sspace.Q*[zeros(n_trends); ones(size(sspace.Q, 1)-n_trends)];
+            sspace.Q.data[i, i] = minimum(var_cycles_innovations)*var_ratios[i];
+        end
+    end
 
     # Determine whether Q is problematic
     if (sum(isnan.(sspace.Q)) == 0) && (sum(isinf.(sspace.Q)) == 0)
         is_Q_non_problematic = true;
-        update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
+        update_sspace_DQD_and_P0_from_params!(sspace, coordinates_free_params_P0);
     else
         is_Q_non_problematic = false;
     end
@@ -89,6 +97,37 @@ function fmin!(constrained_params::AbstractVector{Float64}, sspace::KalmanSettin
     else
         is_P0_non_problematic = false;
     end
+
+    return is_Q_non_problematic, is_P0_non_problematic;
+end
+
+"""
+    fmin!(
+        constrained_params         :: AbstractVector{Float64}, 
+        sspace                     :: KalmanSettings, 
+        coordinates_free_params_B  :: BitMatrix, 
+        coordinates_free_params_Q  :: BitMatrix, 
+        coordinates_free_params_P0 :: BitMatrix
+    )
+
+Return -1 times the log-likelihood function (or a large number in case of numerical problems).
+"""
+function fmin!(
+    constrained_params         :: AbstractVector{Float64}, 
+    sspace                     :: KalmanSettings, 
+    coordinates_free_params_B  :: BitMatrix, 
+    coordinates_free_params_Q  :: BitMatrix, 
+    coordinates_free_params_P0 :: BitMatrix
+)
+
+    # Update `sspace` free parameters
+    is_Q_non_problematic, is_P0_non_problematic = update_sspace_from_params!(
+        constrained_params,
+        sspace,
+        coordinates_free_params_B,
+        coordinates_free_params_Q,
+        coordinates_free_params_P0
+    );
     
     # Regular run
     if is_Q_non_problematic && is_P0_non_problematic
@@ -121,13 +160,19 @@ APIs to call `fmin!` with Tuple parameters.
 call_fmin!(constrained_params::AbstractVector{Float64}, tuple_fmin_args::Tuple) = fmin!(constrained_params, tuple_fmin_args...);
 
 """
-    initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; first_step::Bool=false)
+    initial_sspace_structure(
+        data  :: Union{FloatMatrix, JMatrix{Float64}}, 
+        estim :: EstimSettings
+    )
 
 Get initial state-space parameters and relevant coordinates. 
 
 Trends are modelled using the Kitagawa representation.
 """
-function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, estim::EstimSettings; first_step::Bool=false)
+function initial_sspace_structure(
+    data  :: Union{FloatMatrix, JMatrix{Float64}}, 
+    estim :: EstimSettings
+)
 
     # `n` for initialisation (it may differ from the one in `estim`)
     n_series_in_data = size(data, 1);
@@ -145,12 +190,11 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
         B_common_cycles[1, i] = 1.0;
     end
 
-    if first_step
-        B_common_cycles[B_common_cycles .!= 1.0] .= 0.0; # no common cycles
-    end
-
     # Setup loading matrix
     B = hcat(B_trends, B_idio_cycles, B_common_cycles);
+
+    # Setup BitMatrix for the free parameters in `B`
+    # NOTE: shortcut to update the factor loadings
     coordinates_free_params_B = B .> 1.0;
 
     # Setup covariance matrix measurement error
@@ -162,11 +206,8 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
 
     # Setup transition matrix for the idiosyncratic cycles
     C_idio_cycles = Matrix(0.1I, n_series_in_data, n_series_in_data);
-    if first_step
-        C_idio_cycles[1, 1] = 0.0;                    # set to noise
-        C_idio_cycles[C_idio_cycles .== 0.1] .*= 9.0; # set to persistent cycles (as persistent as the common cycles)
-    end
-    
+    C_idio_cycles[1, 1] = 0.0;
+
     # Setup transition matrix for the common cycles
     C_common_cycles_template = companion_form([0.9 zeros(1, estim.lags-1)], extended=false);
     C_common_cycles = cat(dims=[1,2], [C_common_cycles_template for i in 1:estim.n_cycles]...);
@@ -176,8 +217,13 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
 
     # Setup covariance matrix of the states' innovation
     # NOTE: all diagonal elements are estimated during the initialisation
-    Q = Symmetric(Matrix(1.0I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
+    Q = Symmetric(Matrix(1e-4*I, estim.n_trends + n_series_in_data + estim.n_cycles, estim.n_trends + n_series_in_data + estim.n_cycles));
 
+    # Setup BitMatrix for the free parameters in `Q`
+    # NOTE: All diagonal elements but those referring to the trends, whose variances are fixed to 1e-4
+    coordinates_free_params_Q = Q .!= 0.0;
+    coordinates_free_params_Q[1:estim.n_trends, 1:estim.n_trends] .= false;
+    
     # Setup selection matrix D for the trends
     D_trends_template = [1.0; 0.0];
     D_trends = cat(dims=[1,2], [D_trends_template for i in 1:estim.n_trends]...);
@@ -225,139 +271,13 @@ function initial_sspace_structure(data::Union{FloatMatrix, JMatrix{Float64}}, es
     # Setup initial conditions
     X0 = vcat(X0_trends, X0_idio_cycles, X0_common_cycles);
     P0 = Symmetric(cat(dims=[1,2], P0_trends, P0_idio_cycles, P0_common_cycles));
+
+    # Setup BitMatrix for the free parameters in `P0`
     coordinates_free_params_P0 = P0 .!= 0.0;
     coordinates_free_params_P0[1:2*estim.n_trends, 1:2*estim.n_trends] .= false;
 
     # Return state-space matrices and relevant coordinates
-    return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0;
-end
-
-"""
-    initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
-
-Run first step of the initialisation to find reasonable initial guesses.
-"""
-function initial_detrending_step_1(Y_trimmed::JMatrix{Float64}, estim::EstimSettings, n_trimmed::Int64)
-    
-    # Get initial state-space parameters and relevant coordinates
-    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim, first_step=true);
-    
-    # Set KalmanSettings
-    sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
-
-    # Initial guess for the parameters
-    params_0 = vcat(
-        1e+4*ones(1+n_trimmed),
-        1e-3*ones(estim.n_trends),
-    );
-    params_lb = vcat(1e+2*ones(1+n_trimmed), 1e-6*ones(estim.n_trends));
-    params_ub = vcat(1e+6*ones(1+n_trimmed), ones(estim.n_trends));
-    
-    # Maximum likelihood
-    tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
-    prob = OptimizationFunction(call_fmin!)
-    prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
-
-    # Update `sspace` from `res_optim`
-    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
-    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
-
-    # Recover smoothed states
-    status = kfilter_full_sample(sspace);
-    smoothed_states_container, _ = ksmoother(sspace, status);
-    smoothed_states = hcat(smoothed_states_container...);
-    
-    # Recover smoothed cycles
-    smoothed_cycles = smoothed_states[2*estim.n_trends+1:2*estim.n_trends+n_trimmed, :];
-    for i=1:n_trimmed
-        last_state_for_ith_series = findlast(B[i, :] .== 1.0);
-        if last_state_for_ith_series > 2*estim.n_trends+n_trimmed
-            smoothed_cycles[i, :] .+= smoothed_states[last_state_for_ith_series, :];
-        end
-    end
-
-    # Return minimizer
-    return res_optim.u, smoothed_states, smoothed_cycles;
-end
-
-"""
-    initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
-
-Initialise current common cycle via PCA.
-"""
-function initialise_common_cycle(estim::EstimSettings, residual_data::FloatMatrix, coordinates_current_block::IntVector)
-
-    # Convenient shortcuts
-    data_current_block = residual_data[coordinates_current_block, :];
-    data_current_block_standardised = standardise(data_current_block);
-
-    # Compute PCA loadings
-    eigen_val, eigen_vect = eigen(Symmetric(cov(data_current_block_standardised, dims=2)));
-    loadings = eigen_vect[:, sortperm(-abs.(eigen_val))[1]];
-
-    # Compute PCA factor
-    pc1 = permutedims(loadings)*data_current_block_standardised;
-
-    # Rescale PCA loadings to match the original scale
-    loadings .*= std(data_current_block, dims=2)[:];
-
-    # Rescale PC1 wrt the first series
-    pc1 .*= loadings[1];
-    loadings ./= loadings[1];
-
-    if estim.lags > 1
-
-        # Backcast `pc1` first
-
-        # Reverse `pc1` time order to predict the past (i.e., backcast)
-        pc1_reversed = reverse(pc1);
-
-        # Estimate ridge backcast coefficients
-        pc1_reversed_y, pc1_reversed_x = lag(pc1_reversed, estim.lags);
-        ar_coeff_backcast = pc1_reversed_y*pc1_reversed_x'/Symmetric(pc1_reversed_x*pc1_reversed_x' + estim.Γ);
-        enforce_causality_and_invertibility!(ar_coeff_backcast);
-
-        # Generate backcast for `pc1`
-        for t=1:estim.lags
-            backcast_x = pc1[1:estim.lags];
-            pc1 = hcat(ar_coeff_backcast*backcast_x, pc1);
-        end
-
-        # Lag principal component
-        pc1_y, pc1_x = lag(pc1, estim.lags);
-
-        # Initialise complete loadings
-        complete_loadings = zeros(length(loadings), estim.lags);
-
-        # Regress one variable at the time on `pc1`
-        pc1_x_shifted_with_backcast = vcat(pc1_y, pc1_x[1:end-1, :]);
-        pc1_x_shifted = pc1_x_shifted_with_backcast[:, estim.lags+1:end];
-        for i in axes(data_current_block, 1)
-            if i == 1
-                complete_loadings[1, 1] = 1.0; # identification
-            else
-                data_current_block_yi, _ = lag(permutedims(data_current_block[i, :]), estim.lags);
-                complete_loadings[i, :] = data_current_block_yi*pc1_x_shifted'/Symmetric(pc1_x_shifted*pc1_x_shifted' + estim.Γ);
-            end
-        end
-
-        # Estimate autoregressive dynamics
-        ar_coefficients = pc1_y*pc1_x'/Symmetric(pc1_x*pc1_x' + estim.Γ);
-        
-        # Estimate var-cov matrix of the residuals
-        ar_residuals = pc1_y - ar_coefficients*pc1_x;
-        ar_residuals_variance = (ar_residuals*ar_residuals')/length(ar_residuals);
-
-        # Explained data
-        explained_data = complete_loadings*pc1_x_shifted_with_backcast;
-
-    else
-        error("`estim.lags` must be greater than one!");
-    end
-    
-    # Return output
-    return complete_loadings, ar_coefficients, ar_residuals_variance, explained_data;
+    return B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0;
 end
 
 """
@@ -387,91 +307,55 @@ function initial_detrending(Y_untrimmed::Union{FloatMatrix, JMatrix{Float64}}, e
     Y_trimmed = Y_untrimmed[:, first_ind:last_ind] |> JMatrix{Float64};
     n_trimmed = size(Y_trimmed, 1);
 
-    # Recover initial guess from step 1
-    @info("Initialisation > warm start")
-    params_0, _, smoothed_cycles_0 = MessyTimeSeriesOptim.initial_detrending_step_1(Y_trimmed, estim, n_trimmed);
-
     # Get initial state-space parameters and relevant coordinates
-    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_P0 = MessyTimeSeriesOptim.initial_sspace_structure(Y_trimmed, estim);
+    B, R, C, D, Q, X0, P0, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0 = initial_sspace_structure(Y_trimmed, estim);
 
     # Set `coordinates_free_params_B` to `false`
-    coordinates_free_params_B .= false;
-
-    # Determine which series can load on each cycle
-    boolean_coordinates_blocks = (estim.cycles_skeleton .!= 0) .| estim.cycles_free_params;
-    coordinates_blocks = [findall(boolean_coordinates_blocks[:, i]) for i=1:estim.n_cycles];
-
-    # Initialise common cycles iteratively via PCA
-    residual_data = copy(smoothed_cycles_0);
-
-    # Loop over common cycles
-    for i=1:estim.n_cycles
-
-        # Pointers
-        coordinates_current_block = coordinates_blocks[i];
-
-        # Loadings for the i-th common cycle
-        complete_loadings, ar_coefficients, ar_residuals_variance, explained_data = initialise_common_cycle(estim, residual_data, coordinates_current_block);
-        
-        # Position of the i-th common cycle in the state-space representation
-        coordinates_pc1 = 1 + (i-1)*estim.lags + 2*estim.n_trends + n_trimmed;
-
-        # Position `complete_loadings` in `B`
-        B[:, coordinates_pc1:coordinates_pc1+estim.lags-1] = complete_loadings;
-
-        # Position `ar_dynamics` in `C`
-        C[coordinates_pc1, coordinates_pc1:coordinates_pc1+estim.lags-1] .= ar_coefficients[:];
-
-        # Position `resid_variance` in `Q`
-        Q[estim.n_trends + n_trimmed + i, estim.n_trends + n_trimmed + i] = ar_residuals_variance[1];
-
-        # Recompute residual data
-        residual_data[coordinates_current_block, :] .-= explained_data;
-    end
-    
-    idio_ar_coefficients = zeros(n_trimmed);
-    idio_residuals_variance = zeros(n_trimmed);
-
-    for i=1:n_trimmed
-    
-        # Lag residual data
-        idio_y, idio_x = lag(permutedims(residual_data[i, :]), 1);
-        
-        # Idiosyncratic cycles coefficients
-        idio_ar_coefficient = idio_y*idio_x'/Symmetric(idio_x*idio_x');
-        idio_ar_coefficients[i] = idio_ar_coefficient[1];
-        
-        # Idiosyncratic cycles variance
-        final_residuals = idio_y - idio_ar_coefficient*idio_x;
-        final_residuals_variance = (final_residuals*final_residuals')/length(final_residuals);
-        idio_residuals_variance[i] = final_residuals_variance[1];
-    end
-
-    C_idio_view = @view C[2*estim.n_trends+1:2*estim.n_trends+n_trimmed, 2*estim.n_trends+1:2*estim.n_trends+n_trimmed];
-    C_idio_view[diagind(C_idio_view)] .= idio_ar_coefficients;
-    Q_idio_view = @view Q[estim.n_trends+1:estim.n_trends+n_trimmed, estim.n_trends+1:estim.n_trends+n_trimmed];
-    Q_idio_view[diagind(Q_idio_view)] .= idio_residuals_variance;
+    #coordinates_free_params_B[:, end-2:end] .= false;
+    #B[:, end-2:end] .= 0.0;
 
     # Set KalmanSettings
     sspace = KalmanSettings(Y_trimmed, B, R, C, D, Q, X0, P0, compute_loglik=true);
 
-    # Update `params_0`
-    # The variance for the cycles is re-calibrated more aggressively given that in the warm start there are no common cycles
-    params_lb = vcat(1e+2*ones(1+n_trimmed), params_0[2+n_trimmed:end]/10);
-    params_ub = vcat(1e+6*ones(1+n_trimmed), params_0[2+n_trimmed:end]*10);
-    
+    # Initial guess for the parameters
+    params_0 = vcat(
+        ones(sum(coordinates_free_params_B)),     # loadings
+        ones(1+n_trimmed),                        # variances of the cycles' innovations
+        1e-5*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
+    )
+
+    # Lower bound
+    params_lb = vcat(
+        -10*ones(sum(coordinates_free_params_B)), # loadings
+        1e-2*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        1e-6*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
+    );
+
+    # Upper bound
+    params_ub = vcat(
+        +10*ones(sum(coordinates_free_params_B)), # loadings
+        1e+2*ones(1+n_trimmed),                   # variances of the cycles' innovations
+        1e-4*ones(estim.n_trends)                 # variance of the trends' innovations (as a function of the cycles)
+    );
+
     # Maximum likelihood
     @info("Initialisation > running optimizer")
-    tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_P0);
+    tuple_fmin_args = (sspace, coordinates_free_params_B, coordinates_free_params_Q, coordinates_free_params_P0);
     prob = OptimizationFunction(call_fmin!)
     prob = OptimizationProblem(prob, params_0, tuple_fmin_args, lb=params_lb, ub=params_ub);
-    res_optim = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2);
 
-    # Update sspace accordingly
-    update_sspace_B_from_params!(res_optim.u, coordinates_free_params_B, sspace);
-    update_sspace_Q_from_params!(res_optim.u, coordinates_free_params_B, sspace);
-    update_sspace_DQD_and_P0_from_params!(coordinates_free_params_P0, sspace);
+    # Recover optimum
+    constrained_params = solve(prob, NLopt.LN_SBPLX, abstol=1e-3, reltol=1e-2).u;
 
+    # Update `sspace` free parameters
+    _ = update_sspace_from_params!(
+        constrained_params,
+        sspace,
+        coordinates_free_params_B,
+        coordinates_free_params_Q,
+        coordinates_free_params_P0
+    );
+    
     # Recover smoothed states
     status = kfilter_full_sample(sspace);
     smoothed_states_container, _ = ksmoother(sspace, status);
